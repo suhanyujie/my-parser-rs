@@ -387,6 +387,7 @@ fn open_element<'a>() -> impl Parser<'a, Element> {
     })
 }
 
+// 先尝试解析器1，再尝试解析器2
 fn either<'a, P1, P2, A>(parser1: P1, parser2: P2) -> impl Parser<'a, A>
 where
     P1: Parser<'a, A>,
@@ -444,7 +445,7 @@ where
 }
 
 fn element<'a>() -> impl Parser<'a, Element> {
-    whitespace_wrap(either(single_element(), open_element()))
+    whitespace_wrap(either(single_element(), parent_element()))
 }
 
 #[cfg(test)]
