@@ -1,3 +1,8 @@
+mod markdown;
+mod redis;
+mod nom1;
+mod http;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Element {
     name: String,

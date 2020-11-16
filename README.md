@@ -4,3 +4,4 @@
 ## 参考资料
 * https://bodil.lol/parser-combinators/
 * https://www.cnblogs.com/ishenghuo/p/11180670.html
+* https://docs.rs/nom/6.0.0/nom/
