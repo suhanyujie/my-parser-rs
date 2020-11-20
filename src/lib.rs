@@ -3,6 +3,7 @@ mod redis;
 mod nom1;
 mod http;
 mod json;
+mod markdown_nom;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Element {

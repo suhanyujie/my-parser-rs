@@ -1,5 +1,6 @@
 //! json 解析器
 //! 参考 https://github.com/Geal/nom/blob/master/examples/json.rs
+//! 参考资料1：https://zhuanlan.zhihu.com/p/146455601
 extern crate nom;
 
 use nom::{
@@ -142,6 +143,11 @@ mod tests {
             "will try to parse valid JSON data:\n\n**********\n{}\n**********\n",
             data
         );
+        println!(
+            "parsing a valid file:\n{:#?}\n",
+            root::<(&str, ErrorKind)>(data)
+        );
+        let data = "[1,2,3]";
         println!(
             "parsing a valid file:\n{:#?}\n",
             root::<(&str, ErrorKind)>(data)
