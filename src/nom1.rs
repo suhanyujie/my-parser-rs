@@ -1,11 +1,6 @@
 extern crate nom;
 
-use nom::{
-    bytes::complete::{tag, take_while_m_n},
-    combinator::map_res,
-    sequence::tuple,
-    IResult,
-};
+use nom::{IResult, bytes::complete::{is_a, is_not, tag, take_while_m_n}, character::complete::char, combinator::map_res, sequence::{delimited, terminated, tuple}};
 
 #[derive(Debug, PartialEq)]
 pub struct Color {
@@ -34,25 +29,41 @@ fn hex_color(input: &str) -> IResult<&str, Color> {
     Ok((input, Color {red, green, blue}))
 }
 
-// fn markdown(input: &str) -> IResult<&str, &str> {
-//     let (input, _) = tag("#")(input)?;
-//     let mut title = String::new();
-//     let (input, title) = tuple((hex_primary, hex_primary, hex_primary))(input)?;
-//     Ok((input, &title))
+fn md_title_level(input: &str) -> IResult<&str, (&str, &str, &str, &str)> {
+    tuple((is_a("#"), is_a(" "), is_not("\n"), is_a("\r\n")))(input)
+}
+
+// fn md_title_content(input: &str) -> IResult<&str, &str> {
+//     terminated(is_not("\r\n"), "\n")(input)
 // }
+
+/// md doc title: 
+/// * # title one
+/// * ## title two
+fn md_title(input: &str) -> IResult<&str, &str> {
+   delimited(tag("#"), is_not("\n"), char('\n'))(input)
+}
 
 mod tests {
     use super::*;
 
     #[test]
-    // fn test_markdown() {
-    //     assert_eq!(markdown("# MySQL 技术内幕\n* 第一个\n* 第二个"),
-    //         Ok((
-    //             "",
-    //             "# MySQL 技术内幕"
-    //         ))
-    //     );
-    // }
+    fn test_title_level() {
+        assert_eq!(
+            md_title_level("# MySQL 技术内幕\n* 第一个"),
+            Ok(("* 第一个", ("#", " ", "MySQL 技术内幕", "\n")))
+        )
+    }
+
+    #[test]
+    fn test_md_title() {
+        assert_eq!(md_title("# MySQL 技术内幕\n* 第一个\n* 第二个"),
+            Ok((
+                "",
+                "# MySQL 技术内幕"
+            ))
+        );
+    }
 
     #[test]
     fn test_from_hex() {
