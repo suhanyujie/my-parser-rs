@@ -47,10 +47,12 @@ fn md_title_level(input: &str) -> IResult<&str, (&str, &str)> {
 //     terminated(is_not("\r\n"), "\n")(input)
 // }
 
+/// 标题内容
 fn md_title_content_part(input: &str) -> IResult<&str, &str> {
     is_not("\n")(input)
 }
 
+/// 行间代码段
 fn md_title_code_block(input: &str) -> IResult<&str, &str> {
     delimited(char('`'), is_not("`"), char('`'))(input)
 }
@@ -60,17 +62,18 @@ fn md_title_content(input: &str) -> IResult<&str, Vec<&str>> {
     many1(alt((md_title_content_part, md_title_code_block)))(input)
 }
 
-// fn many_part_content<'a, 'b>(input: &'a str) -> IResult<&'a str, &'b str>
+/// 解析内容部分，如 md 的标题的内容
+// fn many_part_content<'a, 'b>(input: &'a str) -> IResult<&'a str, Vec<&'b str>>
 // where
 //     'b: 'a,
 // {
-//     let parser = many1(alt((md_title_content_part, md_title_code_block)));
+//     let mut parser = many1(alt((md_title_content_part, md_title_code_block)));
 //     let mut result = String::new();
 //     if let Ok((remain, res_list)) = parser(input) {
-//         result = res_list.join("");
+//         return Ok((remain, res_list));
+//     } else {
+//         return Ok(("", vec![]));
 //     }
-//     let res_ref: &'b str = &*result;
-//     return Ok(("", res_ref));
 // }
 
 // todo
@@ -86,6 +89,7 @@ fn md_title_content_dealed(input: &str) -> IResult<&str, Vec<&str>> {
 //     delimited(tag("#"), many1(" "), char('\n'))(input)
 // }
 
+#[cfg(test)]
 mod tests {
     use super::*;
 

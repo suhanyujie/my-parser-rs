@@ -8,6 +8,6 @@ edition = "2018"
 
 [dependencies]
 tokio = { version = "0.2", features = ["full"]}
-nom = "6"
-bytes = "0.5.4"
+nom = "7.0.0"
+bytes = "1.0.1"
 structopt = "0.3.14"
