@@ -3,6 +3,7 @@ mod json;
 mod markdown;
 mod markdown_nom;
 mod nom1;
+mod parse_num1;
 mod parse_string;
 mod redis;
 mod sql;
