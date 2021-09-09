@@ -97,6 +97,9 @@ use nom::{
     sequence::{delimited, preceded},
     IResult,
 };
+use nom::{error::ErrorKind, Err, Parser};
+
+use nom::combinator::map as nom_map;
 
 use crate::sql::Literal;
 
@@ -141,6 +144,7 @@ fn parse_str_with_escaped<'a>(input: &'a str) -> IResult<&'a str, String> {
     }
 }
 
+#[derive(Debug, PartialEq, Eq)]
 enum Fr<'a> {
     Literal(&'a str),
 }
@@ -152,7 +156,7 @@ fn demo1() {
 
 #[cfg(test)]
 mod tests {
-    use nom::character::is_alphabetic;
+    use nom::character::{is_alphabetic, is_digit};
 
     use crate::map;
 
@@ -179,9 +183,19 @@ mod tests {
 
     #[test]
     fn test_enum1() {
-        // let s1 = "hello";
+        let s1 = "hello";
+        // bad case:
         // let mut p: dyn FnMut(&str) -> IResult<&str, Fr> =
-        //     nom::combinator::map(tag("hello"), Fr::Literal);
-        // let res = p(s1);
+        //     nom_map(tag("hello"), |parsed_res: &str| Fr::Literal(parsed_res))(s1);
+        // assert_eq!(p(s1), Ok(("", Fr::Literal("hello"))));
+
+        // good case:
+        let res: IResult<&str, Fr> =
+            nom_map(tag("hello"), |parsed_res: &str| Fr::Literal(parsed_res))(s1);
+        assert_eq!(res, Ok(("", Fr::Literal("hello"))));
+    }
+
+    fn enum_1(input: &str) {
+        // let mut parser = nom::combinator::map(tag("hello"), Fr::Literal);
     }
 }
