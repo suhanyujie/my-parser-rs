@@ -91,6 +91,7 @@ thread 'parse_string::tests::test2' panicked at 'assertion failed: `(left == rig
 use nom::character::complete::char as nom_char;
 use nom::combinator::value;
 use nom::error::{FromExternalError, ParseError};
+use nom::multi::fold_many0;
 use nom::{
     branch::alt,
     bytes::complete::{is_not, tag},
@@ -104,7 +105,7 @@ use nom::combinator::map as nom_map;
 use crate::sql::Literal;
 
 fn parse_normal_str1<'a>(input: &'a str) -> IResult<&'a str, String> {
-    let mut parser = delimited(tag("\""), is_not("\n\""), tag("\""));
+    let mut parser = delimited(tag("\""), is_not("\n\"\\"), tag("\""));
     let res = parser(input);
     match res {
         Ok((remain, result)) => {
@@ -116,14 +117,24 @@ fn parse_normal_str1<'a>(input: &'a str) -> IResult<&'a str, String> {
     }
 }
 
-fn parse_escaped_str1<'a>(input: &'a str) -> IResult<&'a str, char> {
+fn parse_escaped_str1<'a>(input: &'a str) -> IResult<&'a str, String> {
     let mut parser = preceded(
         nom_char('\\'),
-        alt((value('\"', nom_char('"')), value('\n', nom_char('n')))),
+        // 特殊的转义字符
+        alt((
+            value('\n', nom_char('n')),
+            value('\r', nom_char('r')),
+            value('\t', nom_char('t')),
+            value('\\', nom_char('\\')),
+            value('/', nom_char('/')),
+            value('"', nom_char('"')),
+        )),
     );
     match parser(input) {
         Ok((remain, res_char)) => {
-            return Ok((remain, res_char));
+            let s = res_char.to_string();
+            println!("{}", &s);
+            return Ok((remain, s));
         }
         Err(err) => {
             return Err(err);
@@ -131,17 +142,24 @@ fn parse_escaped_str1<'a>(input: &'a str) -> IResult<&'a str, char> {
     }
 }
 
+/// 一个字符串中有正常的字符串字面量，也可能有特殊的转义字符，也可能有转义的空白字符，要分别对它们做处理。
 fn parse_str_with_escaped<'a>(input: &'a str) -> IResult<&'a str, String> {
-    let mut parser = delimited(tag("\""), is_not("\n\""), tag("\""));
-    let res = parser(input);
-    match res {
-        Ok((remain, result)) => {
-            return Ok((remain, result.to_string()));
-        }
-        Err(err) => {
-            return Err(err);
-        }
-    }
+    alt((
+        nom_map(parse_normal_str1, |s| s),
+        nom_map(parse_escaped_str1, |s| s),
+    ))(input)
+}
+
+fn parse_str_with_escaped_and_combine(input: &str) -> IResult<&str, String> {
+    let string_builder = fold_many0(
+        parse_str_with_escaped,
+        String::new,
+        |mut string, fragment| {
+            string += &fragment;
+            string
+        },
+    );
+    delimited(nom_char('"'), string_builder, nom_char('"'))(input)
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -165,7 +183,12 @@ mod tests {
     #[test]
     fn test1() {
         let s = r##""hello world""##;
+        println!("source is: {}", s);
         assert_eq!(parse_normal_str1(s), Ok(("", "hello world".to_string())));
+        assert_eq!(
+            parse_normal_str1("\"hello \""),
+            Ok(("", "hello ".to_string()))
+        );
     }
 
     #[test]
@@ -178,7 +201,9 @@ mod tests {
 
     #[test]
     fn test_escaped_str() {
-        assert_eq!(parse_escaped_str1(r##"\""##), Ok(("", '"')));
+        assert_eq!(parse_escaped_str1(r##"\""##), Ok(("", '"'.to_string())));
+        assert_eq!(parse_escaped_str1(r##"\n"##), Ok(("", '\n'.to_string())));
+        assert_eq!(parse_escaped_str1("\"\n\""), Ok(("", '\n'.to_string())));
     }
 
     #[test]
@@ -190,12 +215,29 @@ mod tests {
         // assert_eq!(p(s1), Ok(("", Fr::Literal("hello"))));
 
         // good case:
-        let res: IResult<&str, Fr> =
-            nom_map(tag("hello"), |parsed_res: &str| Fr::Literal(parsed_res))(s1);
+        // 该 map 的第二个参数可以是一个闭包，也可以是一个枚举变体。
+        let res: IResult<&str, Fr> = nom_map(tag("hello"), Fr::Literal)(s1);
         assert_eq!(res, Ok(("", Fr::Literal("hello"))));
     }
 
-    fn enum_1(input: &str) {
-        // let mut parser = nom::combinator::map(tag("hello"), Fr::Literal);
+    #[test]
+    fn test_parse_str_with_escaped() {
+        // `\"` 代表意义就是一个双引号。
+        assert_eq!(parse_str_with_escaped("\\\""), Ok(("", "\"".to_string())));
+    }
+
+    #[test]
+    fn test_parse_str_with_escaped_and_combine() {
+        let source = "\"hello \"";
+        println!("source is: {}", source);
+        assert_eq!(
+            parse_str_with_escaped_and_combine(source),
+            Ok(("", "hello ".to_string()))
+        );
+        // `"hello \"Nico\""` 就是 `hello "Nico"`
+        // assert_eq!(
+        //     parse_str_with_escaped_and_combine("\"hello \\\"Nico\\\"\""),
+        //     Ok(("", "hello \"Nico\"".to_string()))
+        // );
     }
 }
