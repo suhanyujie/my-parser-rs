@@ -163,7 +163,7 @@ fn test_parse_u32_ver1() {
 
 太棒了，验证通过！
 
-至此，总算是完成了一个简单的解析器，但距离解析 sql、json 还很远，我们下一章来试试如何解析 sql；
+至此，总算是完成了一个简单的解析器，但距离解析 sql、json 还很远，不着急，慢慢来。我们下一章来试试如何解析字符串。
 
 ## 参考
 * https://github.com/Geal/nom/blob/master/doc/making_a_new_parser_from_scratch.md
