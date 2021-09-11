@@ -2,6 +2,8 @@
 >* 文章名称：从零编写一个解析器（1）—— 解析数字
 >* 参考地址：https://github.com/Geal/nom/blob/master/doc/making_a_new_parser_from_scratch.md
 >* 文章来自：https://github.com/suhanyujie/my-parser-rs
+>* 文章作者：[suhanyujie](https://github.com/suhanyujie)
+>* Tips：文章如果有任何错误之处，还请指正，谢谢~
 >* 标签：Rust，parser
 
 长久以来，由于我在工作中使用 go 语言，所以时常会遇到需要将 sql 转换为 struct 的需求，虽然在网上能够找到一些将 sql、json 等转换为 struct 的工具，但大都无法配置，要么只支持将 json 转 struct，要么转换后 tag 的风格不符合我所需要的。

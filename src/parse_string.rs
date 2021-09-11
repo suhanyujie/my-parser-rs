@@ -2,6 +2,8 @@
 >* 文章名称：从零编写一个解析器（2）—— 字符串解析
 >* 参考地址：https://github.com/Geal/nom/blob/master/examples/string.rs
 >* 文章来自：https://github.com/suhanyujie/my-parser-rs
+>* 文章作者：[suhanyujie](https://github.com/suhanyujie)
+>* Tips：文章如果有任何错误之处，还请指正，谢谢~
 >* 标签：Rust，parser
 
 在代码中，我们经常会声明变量、声明字符串，然后编写业务逻辑，然后你是否有想过，编译器是如何读懂你的变量声明，你的代码逻辑。
