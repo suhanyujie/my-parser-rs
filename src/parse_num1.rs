@@ -1,5 +1,5 @@
 /*
->* 文章名称：从零编写一个解析器（1）
+>* 文章名称：从零编写一个解析器（1）—— 解析数字
 >* 参考地址：https://github.com/Geal/nom/blob/master/doc/making_a_new_parser_from_scratch.md
 >* 文章来自：https://github.com/suhanyujie/my-parser-rs
 >* 标签：Rust，parser
@@ -14,6 +14,7 @@
 万丈高楼平地起，要想用 nom 写好一个解析器，我们先要对 nom 进行一些了解，因此先从一些小示例开始，通过一些常用的 nom 函数来实现简单的解析。
 
 ### 第一次解析
+
 根据 [文档](https://github.com/Geal/nom/blob/master/doc/making_a_new_parser_from_scratch.md) 中的介绍，我们先从解析一个括号中的数字 —— `(12345)` 开始。先定义一个函数签名，它用于把字符串 `(12345)` 解析成数字：
 
 ```rust
