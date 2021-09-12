@@ -90,12 +90,15 @@ column_definition: {
 * https://github.com/ms705/nom-sql
 
 */
-use crate::{parse_string::parse_str_with_escaped_and_combine, space0};
+use crate::parse_string::parse_str_with_escaped_and_combine;
 use nom::{
     branch::alt,
     bytes::complete::{tag, tag_no_case, take_while1},
-    character::complete::space1,
-    multi::many0,
+    character::complete::u32 as nom_u32,
+    character::complete::{alphanumeric1, char as nom_char},
+    character::complete::{space0, space1},
+    combinator::opt,
+    multi::{fold_many1, many0, many1, many_m_n},
     sequence::{preceded, tuple},
     IResult,
 };
@@ -132,65 +135,151 @@ fn parse_column_definition_of_default(input: &str) -> IResult<&str, String> {
     }
 }
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub enum SqlType {
-    Bool,
-    Char(u16),
-    Varchar(u16),
-    Int(u16),
-    UnsignedInt(u16),
-    Bigint(u16),
-    UnsignedBigint(u16),
-    Tinyint(u16),
-    UnsignedTinyint(u16),
-    Blob,
-    Longblob,
-    Mediumblob,
-    Tinyblob,
-    Double,
-    Float,
-    Real,
-    Tinytext,
-    Mediumtext,
-    Longtext,
+fn parse_column_definition_of_null(input: &str) -> IResult<&str, String> {
+    match alt((tag_no_case("null"), tag_no_case("not null")))(input) {
+        Ok((remain, null_val)) => Ok((remain, null_val.to_string())),
+        Err(err) => Err(err),
+    }
+}
+
+// todo
+fn parse_column_definition_of_data_type(input: &str) -> IResult<&str, String> {
+    match alt((tag_no_case("null"), tag_no_case("not null")))(input) {
+        Ok((remain, null_val)) => Ok((remain, null_val.to_string())),
+        Err(err) => Err(err),
+    }
+}
+
+fn identifier_char_parser(input: &str) -> IResult<&str, String> {
+    match alt((alphanumeric1, tag("_")))(input) {
+        Ok((remain, parse_res)) => Ok((remain, parse_res.to_string())),
+        Err(err) => Err(err),
+    }
+}
+
+fn sql_identifier(input: &str) -> IResult<&str, String> {
+    let identifier_parser = fold_many1(identifier_char_parser, String::new, |mut string, tmp| {
+        string += &tmp;
+        string
+    });
+    match tuple((
+        many_m_n(0, 1, nom_char('`')),
+        identifier_parser,
+        many_m_n(0, 1, nom_char('`')),
+    ))(input)
+    {
+        Ok((remain, (_, table_name, _))) => Ok((remain, table_name.to_string())),
+        Err(err) => Err(err),
+    }
+}
+
+// 处理类型
+#[derive(Debug, PartialEq, Eq)]
+enum DataTypeEnum {
+    TinyInt,
+    SmallInt,
+    Int,
+    Bigint,
+    VarChar(u32),
+    DateTime(u32),
     Text,
-    Date,
-    DateTime(u16),
-    Timestamp,
-    Binary(u16),
-    Varbinary(u16),
-    Enum(Vec<Literal>),
-    Decimal(u8, u8),
+    BigText,
+    Decimal(u8),
+    Unknown,
 }
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub enum Literal {
-    Null,
-    Integer(i64),
-    UnsignedInteger(u64),
-    FixedPoint(Real),
-    String(String),
-    Blob(Vec<u8>),
-    CurrentTime,
-    CurrentDate,
-    CurrentTimestamp,
-    Placeholder(ItemPlaceholder),
+fn type_int_size(input: &str) -> IResult<&str, u32> {
+    match tuple((tag("("), nom_u32, tag(")")))(input) {
+        Ok((remain, (_, int_size, _))) => Ok((remain, int_size)),
+        Err(err) => Err(err),
+    }
 }
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub enum ItemPlaceholder {
-    QuestionMark,
-    DollarNumber(i32),
-    ColonNumber(i32),
+fn type_tiny_int(input: &str) -> IResult<&str, DataTypeEnum> {
+    match tuple((tag_no_case("tinyint"), opt(type_int_size)))(input) {
+        Ok((remain, (_, _))) => Ok((remain, DataTypeEnum::TinyInt)),
+        Err(err) => Err(err),
+    }
 }
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct Real {
-    pub integral: i32,
-    pub fractional: i32,
+fn type_some_int(input: &str) -> IResult<&str, DataTypeEnum> {
+    match tuple((
+        alt((
+            tag_no_case("int"),
+            tag_no_case("bigint"),
+            tag_no_case("smallint"),
+            tag_no_case("tinyint"),
+        )),
+        opt(type_int_size),
+    ))(input)
+    {
+        Ok((remain, (flag, _))) => {
+            let parse_res = match flag {
+                "int" => DataTypeEnum::Int,
+                "bigint" => DataTypeEnum::Bigint,
+                "smallint" => DataTypeEnum::SmallInt,
+                "tinyint" => DataTypeEnum::TinyInt,
+                _ => DataTypeEnum::Unknown,
+            };
+            Ok((remain, parse_res))
+        }
+        Err(err) => Err(err),
+    }
 }
 
-fn parse_sql1() {}
+fn type_collate(input: &str) -> IResult<&str, String> {
+    match tuple((space1, tag_no_case("collate"), space1, sql_identifier))(input) {
+        Ok((remain, (_, _, _, collate_name))) => Ok((remain, collate_name)),
+        Err(err) => Err(err),
+    }
+}
+
+// `user_name` varchar(50) COLLATE utf8mb4_bin DEFAULT NULL COMMENT '用户名',
+fn type_varchar(input: &str) -> IResult<&str, DataTypeEnum> {
+    match tuple((tag_no_case("varchar"), type_int_size, opt(type_collate)))(input) {
+        // 暂时忽略字符集排序
+        Ok((remain, (_, size, _))) => Ok((remain, DataTypeEnum::VarChar(size))),
+        Err(err) => Err(err),
+    }
+}
+
+// datetime(3) DEFAULT NULL COMMENT '创建时间',
+fn type_datetime(input: &str) -> IResult<&str, DataTypeEnum> {
+    match tuple((tag_no_case("datetime"), type_int_size))(input) {
+        Ok((remain, (_, size))) => Ok((remain, DataTypeEnum::DateTime(size))),
+        Err(err) => Err(err),
+    }
+}
+
+fn type_text(input: &str) -> IResult<&str, DataTypeEnum> {
+    match tuple((tag_no_case("text"), opt(type_collate)))(input) {
+        Ok((remain, (_, _))) => Ok((remain, DataTypeEnum::Text)),
+        Err(err) => Err(err),
+    }
+}
+
+fn type_bigtext(input: &str) -> IResult<&str, DataTypeEnum> {
+    match tuple((tag_no_case("bigtext"), opt(type_collate)))(input) {
+        Ok((remain, (_, _))) => Ok((remain, DataTypeEnum::BigText)),
+        Err(err) => Err(err),
+    }
+}
+
+// decimal(30)
+// 最大可达 65
+fn type_decimal(input: &str) -> IResult<&str, DataTypeEnum> {
+    match tuple((tag_no_case("decimal"), type_int_size))(input) {
+        Ok((remain, (_, size))) => Ok((remain, DataTypeEnum::Decimal(size as u8))),
+        Err(err) => Err(err),
+    }
+}
+
+fn parse_data_type(input: &str) -> IResult<&str, DataTypeEnum> {
+    match alt((type_some_int, type_varchar, type_datetime, type_decimal))(input) {
+        Ok((remain, parse_res)) => Ok((remain, parse_res)),
+        Err(err) => Err(err),
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -243,6 +332,56 @@ mod tests {
         assert_eq!(
             parse_column_definition_of_default(input),
             Ok(("", "1".to_string()))
-        )
+        );
+    }
+
+    #[test]
+    fn test_sql_identifier() {
+        assert_eq!(
+            sql_identifier("work_user"),
+            Ok(("", "work_user".to_string()))
+        );
+        assert_eq!(
+            sql_identifier("`work_user`"),
+            Ok(("", "work_user".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_type_tiny_int() {
+        assert_eq!(
+            type_tiny_int("tinyint(10)"),
+            Ok(("", DataTypeEnum::TinyInt))
+        );
+        assert_eq!(
+            type_some_int("tinyint(10)"),
+            Ok(("", DataTypeEnum::TinyInt))
+        );
+        assert_eq!(type_some_int("bigint"), Ok(("", DataTypeEnum::Bigint)));
+    }
+
+    #[test]
+    fn test_type_collate() {
+        assert_eq!(
+            type_collate(" COLLATE utf8mb4_bin"),
+            Ok(("", "utf8mb4_bin".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_parse_data_type() {
+        assert_eq!(parse_data_type("int"), Ok(("", DataTypeEnum::Int)));
+        assert_eq!(
+            parse_data_type("bigint(20)"),
+            Ok(("", DataTypeEnum::Bigint))
+        );
+        assert_eq!(
+            parse_data_type("varchar(255)"),
+            Ok(("", DataTypeEnum::VarChar(255)))
+        );
+        assert_eq!(
+            parse_data_type("varchar(50) COLLATE utf8mb4_bin"),
+            Ok(("", DataTypeEnum::VarChar(50)))
+        );
     }
 }
