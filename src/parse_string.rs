@@ -358,7 +358,7 @@ fn parse_normal_or_escaped_str(input: &str) -> IResult<&str, String> {
 
 /// 解析由双引号包裹的字符串
 /// 一个字符串由双引号 `"` 包裹着，其中有普通字符，也可能有特殊的转义字符
-fn parse_str_with_escaped_and_combine(input: &str) -> IResult<&str, String> {
+pub fn parse_str_with_escaped_and_combine(input: &str) -> IResult<&str, String> {
     let string_builder = fold_many0(
         parse_normal_or_escaped,
         String::new,
