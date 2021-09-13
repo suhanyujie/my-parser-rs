@@ -333,7 +333,7 @@ fn parse_escaped<'a>(input: &'a str) -> IResult<&'a str, String> {
 }
 
 fn parse_normal(input: &str) -> IResult<&str, String> {
-    let parser = is_not("\"\\\n\r\t/");
+    let parser = is_not("\'\"\\\n\r\t/");
     let res = parser(input);
     match res {
         Ok((remain, result)) => {
@@ -368,6 +368,23 @@ pub fn parse_str_with_escaped_and_combine(input: &str) -> IResult<&str, String> 
         },
     );
     delimited(nom_char('"'), string_builder, nom_char('"'))(input)
+}
+
+// to fix 字符串定界符
+pub fn parse_str_with_escaped_and_combine_in_single_quote(input: &str) -> IResult<&str, String> {
+    let string_builder = fold_many0(
+        parse_normal_or_escaped,
+        String::new,
+        |mut string, part_res| {
+            string += &part_res;
+            string
+        },
+    );
+    delimited(
+        alt((nom_char('\''), nom_char('\"'))),
+        string_builder,
+        alt((nom_char('\''), nom_char('\"'))),
+    )(input)
 }
 
 #[derive(Debug, PartialEq, Eq)]

@@ -88,14 +88,17 @@ column_definition: {
 * https://dev.mysql.com/doc/refman/8.0/en/create-table.html
 * https://github.com/Geal/nom/blob/master/doc/making_a_new_parser_from_scratch.md
 * https://github.com/ms705/nom-sql
+* 字符串字面量的声明可以参考 https://doc.rust-lang.org/reference/tokens.html#raw-string-literals
 
 */
-use crate::parse_string::parse_str_with_escaped_and_combine;
+use crate::parse_string::{
+    parse_str_with_escaped_and_combine, parse_str_with_escaped_and_combine_in_single_quote,
+};
 use nom::{
     branch::alt,
     bytes::complete::{tag, tag_no_case, take_while1},
     character::complete::u32 as nom_u32,
-    character::complete::{alphanumeric1, char as nom_char},
+    character::complete::{alphanumeric1, char as nom_char, multispace0},
     character::complete::{space0, space1},
     combinator::opt,
     multi::{fold_many1, many0, many1, many_m_n},
@@ -103,49 +106,36 @@ use nom::{
     IResult,
 };
 
-/// 解析类型的定义，如：`int not null default '1' comment 'main key'`
-/// 在这其中，最重要的信息是 类型、默认值、注释
-fn parse_column_definition1(input: &str) -> IResult<&str, String> {
-    let mut parser = tuple((
-        tag_no_case("int"),
-        space1,
-        alt((
-            tag_no_case("not null default 1"),
-            tag_no_case("default null"),
-        )),
-        space1,
-        preceded(tag("comment "), parse_str_with_escaped_and_combine),
-    ));
-    match parser(input) {
-        Ok((remain, (typ, _, _, _, comment_str))) => Ok((remain, comment_str)),
-        Err(err) => Err(err),
-    }
-}
-
 /// 解析 default 部分
-fn parse_column_definition_of_default(input: &str) -> IResult<&str, String> {
-    match tuple((
-        tag_no_case("default"),
-        space1,
-        parse_str_with_escaped_and_combine,
-    ))(input)
-    {
-        Ok((remain, (_, _, default_val))) => Ok((remain, default_val)),
+// not null default 1
+// not null default '1231231'
+// [dataType] default null
+// [dataType] default AUTO_INCREMENT
+fn parse_column_definition_of_default(input: &str) -> IResult<&str, DefaultEnum> {
+    match tuple((opt(parse_column_definition_of_not_null), opt(parse_default)))(input) {
+        Ok((remain, (_not_null, default_val))) => {
+            // 有可能没有 not null 而只有 default ''
+            if default_val.is_some() {
+                Ok((remain, DefaultEnum::DefaultNull))
+            } else {
+                Ok((remain, DefaultEnum::DefaultNone))
+            }
+        }
         Err(err) => Err(err),
     }
 }
 
 fn parse_column_definition_of_null(input: &str) -> IResult<&str, String> {
-    match alt((tag_no_case("null"), tag_no_case("not null")))(input) {
+    match tag_no_case("null")(input) {
         Ok((remain, null_val)) => Ok((remain, null_val.to_string())),
         Err(err) => Err(err),
     }
 }
 
-// todo
-fn parse_column_definition_of_data_type(input: &str) -> IResult<&str, String> {
-    match alt((tag_no_case("null"), tag_no_case("not null")))(input) {
-        Ok((remain, null_val)) => Ok((remain, null_val.to_string())),
+// 解析 not null
+fn parse_column_definition_of_not_null(input: &str) -> IResult<&str, String> {
+    match tuple((space1, tag_no_case("not"), space1, tag_no_case("null")))(input) {
+        Ok((remain, _some_val)) => Ok((remain, "".to_string())),
         Err(err) => Err(err),
     }
 }
@@ -188,6 +178,19 @@ enum DataTypeEnum {
     Unknown,
 }
 
+#[derive(Debug, PartialEq, Eq)]
+enum DefaultEnum {
+    DefaultNone, // 没有 default 语句
+    DefaultNull,
+    DefaultInt(u32),
+    DefaultStr(String),
+    DefaultCurStamp,
+    DefaultAutoIncrement,
+    DefaultCurStampOnUpdateCurStamp,
+    DefaultOnUpdateCurStamp,
+    Unknown,
+}
+
 fn type_int_size(input: &str) -> IResult<&str, u32> {
     match tuple((tag("("), nom_u32, tag(")")))(input) {
         Ok((remain, (_, int_size, _))) => Ok((remain, int_size)),
@@ -202,6 +205,20 @@ fn type_tiny_int(input: &str) -> IResult<&str, DataTypeEnum> {
     }
 }
 
+fn parse_int_auto_increment(input: &str) -> IResult<&str, DefaultEnum> {
+    match tag_no_case("AUTO_INCREMENT")(input) {
+        Ok((remain, _)) => Ok((remain, DefaultEnum::DefaultAutoIncrement)),
+        Err(err) => Err(err),
+    }
+}
+
+fn parse_int_is_unsigned(input: &str) -> IResult<&str, Option<i8>> {
+    match tuple((space1, tag_no_case("unsigned")))(input) {
+        Ok((remain, (_, _))) => Ok((remain, Some(1))),
+        Err(err) => Err(err),
+    }
+}
+
 fn type_some_int(input: &str) -> IResult<&str, DataTypeEnum> {
     match tuple((
         alt((
@@ -211,9 +228,10 @@ fn type_some_int(input: &str) -> IResult<&str, DataTypeEnum> {
             tag_no_case("tinyint"),
         )),
         opt(type_int_size),
+        opt(parse_int_is_unsigned),
     ))(input)
     {
-        Ok((remain, (flag, _))) => {
+        Ok((remain, (flag, _, _))) => {
             let parse_res = match flag {
                 "int" => DataTypeEnum::Int,
                 "bigint" => DataTypeEnum::Bigint,
@@ -245,8 +263,14 @@ fn type_varchar(input: &str) -> IResult<&str, DataTypeEnum> {
 
 // datetime(3) DEFAULT NULL COMMENT '创建时间',
 fn type_datetime(input: &str) -> IResult<&str, DataTypeEnum> {
-    match tuple((tag_no_case("datetime"), type_int_size))(input) {
-        Ok((remain, (_, size))) => Ok((remain, DataTypeEnum::DateTime(size))),
+    match tuple((tag_no_case("datetime"), opt(type_int_size)))(input) {
+        Ok((remain, (_, size_info))) => {
+            if size_info.is_some() {
+                Ok((remain, DataTypeEnum::DateTime(size_info.unwrap())))
+            } else {
+                Ok((remain, DataTypeEnum::DateTime(0)))
+            }
+        }
         Err(err) => Err(err),
     }
 }
@@ -281,57 +305,221 @@ fn parse_data_type(input: &str) -> IResult<&str, DataTypeEnum> {
     }
 }
 
+fn parse_default_int(input: &str) -> IResult<&str, DefaultEnum> {
+    match tuple((tag_no_case("default"), space1, nom_u32))(input) {
+        Ok((remain, (_, _, u32_val))) => Ok((remain, DefaultEnum::DefaultInt(u32_val))),
+        Err(err) => Err(err),
+    }
+}
+
+fn parse_default_str(input: &str) -> IResult<&str, DefaultEnum> {
+    match tuple((
+        tag_no_case("default"),
+        space1,
+        parse_str_with_escaped_and_combine_in_single_quote,
+    ))(input)
+    {
+        Ok((remain, (_, _, str_val))) => Ok((remain, DefaultEnum::DefaultStr(str_val))),
+        Err(err) => Err(err),
+    }
+}
+
+fn parse_comment(input: &str) -> IResult<&str, String> {
+    match tuple((
+        space1,
+        tag_no_case("comment"),
+        space1,
+        parse_str_with_escaped_and_combine_in_single_quote,
+    ))(input)
+    {
+        Ok((remain, (_, _, _, str_val))) => Ok((remain, str_val.to_string())),
+        Err(err) => Err(err),
+    }
+}
+
+fn parse_default_null(input: &str) -> IResult<&str, DefaultEnum> {
+    match tuple((tag_no_case("default"), space1, tag_no_case("null")))(input) {
+        Ok((remain, (_, _, _))) => Ok((remain, DefaultEnum::DefaultNull)),
+        Err(err) => Err(err),
+    }
+}
+
+fn parse_default_on_current_timestamp(input: &str) -> IResult<&str, DefaultEnum> {
+    match tuple((
+        space1,
+        tag_no_case("on"),
+        space1,
+        tag_no_case("update"),
+        space1,
+        tag_no_case("current_timestamp"),
+    ))(input)
+    {
+        Ok((remain, (_, _, _, _, _, _))) => Ok((remain, DefaultEnum::DefaultOnUpdateCurStamp)),
+        Err(err) => Err(err),
+    }
+}
+
+fn parse_default_current_timestamp(input: &str) -> IResult<&str, DefaultEnum> {
+    match tuple((
+        tag_no_case("default"),
+        space1,
+        tag_no_case("CURRENT_TIMESTAMP"),
+        opt(parse_default_on_current_timestamp),
+    ))(input)
+    {
+        Ok((remain, (_, _, _, some_val))) => {
+            if some_val.is_some() {
+                Ok((remain, DefaultEnum::DefaultCurStampOnUpdateCurStamp))
+            } else {
+                Ok((remain, DefaultEnum::DefaultCurStamp))
+            }
+        }
+        Err(err) => Err(err),
+    }
+}
+
+// not null default 1
+// not null default '1231231'
+//  default null
+// DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+// AUTO_INCREMENT 这个也可视为一种默认值
+fn parse_default(input: &str) -> IResult<&str, DefaultEnum> {
+    match tuple((
+        space1,
+        alt((
+            parse_default_int,
+            parse_default_str,
+            parse_default_null,
+            parse_default_current_timestamp,
+            parse_int_auto_increment,
+        )),
+    ))(input)
+    {
+        Ok((remain, (_, parse_res))) => Ok((remain, parse_res)),
+        Err(err) => Err(err),
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct OneColumn {
+    name: String,
+    typ: DataTypeEnum,
+    comment: String,
+}
+
+impl OneColumn {
+    fn new(name: String, typ: DataTypeEnum, comment: String) -> Self {
+        OneColumn { name, typ, comment }
+    }
+}
+
+fn parse_end_has_comma(input: &str) -> IResult<&str, Option<i8>> {
+    let mut parse_has_comma = tuple((tag(","), opt(space0)));
+    match parse_has_comma(input) {
+        Ok((remain, (_, _))) => Ok((remain, Some(1))),
+        Err(err) => Err(err),
+    }
+}
+fn parse_end_no_comma(input: &str) -> IResult<&str, Option<i8>> {
+    let mut parse_no_comma = tuple((opt(space0), tag("}")));
+    match parse_no_comma(input) {
+        Ok((remain, (_, _))) => Ok((remain, Some(0))),
+        Err(err) => Err(err),
+    }
+}
+
+// 最后一行字段定义，可能没有逗号
+fn parse_end_comma(input: &str) -> IResult<&str, Option<i8>> {
+    alt((parse_end_has_comma, parse_end_no_comma))(input)
+}
+
+/// 解析类型的定义，如：`int not null default '1' comment 'main key'`
+/// 在这其中，最重要的信息是 类型、默认值、注释
+fn parse_column_definition1(input: &str) -> IResult<&str, OneColumn> {
+    let mut parser = tuple((
+        sql_identifier,
+        space1,
+        parse_data_type,
+        parse_column_definition_of_default,
+        opt(parse_comment),
+        space0,
+        tag(","),
+        opt(multispace0),
+    ));
+    match parser(input) {
+        Ok((remain, (column_name, _, column_type, _, opt_comment, _, _, _))) => {
+            let mut comment = String::new();
+            if opt_comment.is_some() {
+                comment = opt_comment.unwrap();
+            }
+            Ok((remain, OneColumn::new(column_name, column_type, comment)))
+        }
+        Err(err) => Err(err),
+    }
+}
+
+fn parse_many_column_definition(input: &str) -> IResult<&str, Vec<OneColumn>> {
+    let mut column_define_builder =
+        fold_many1(parse_column_definition1, Vec::new, |mut arr, one_column| {
+            arr.push(one_column);
+            arr
+        });
+
+    match tuple((tag("{"), space0, column_define_builder, space0, tag("}")))(input) {
+        Ok((remain, (_, _, column_arr, _, _))) => Ok((remain, column_arr)),
+        Err(err) => Err(err),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// 字符串字面量的声明可以参考 https://doc.rust-lang.org/reference/tokens.html#raw-string-literals
     #[test]
-    fn test_parse_sql1() {
-        let sql_str1 = r#"CREATE TABLE parse_t(
-            id INT NOT NULL,
-            cv1 VARCHAR(20) DEFAULT "",
-            tt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            dayweek SMALLINT,
-            cv2 INT,
-            PRIMARY KEY(id)
-        ) ENGINE=innodb DEFAULT CHARSET=utf8mb4;"#;
-        let lines: Vec<String> = sql_str1
-            .lines()
-            .filter(|l| {
-                !l.is_empty()
-                    && !l.starts_with("#")
-                    && !l.starts_with("--")
-                    && !(l.starts_with("/*") && l.ends_with("*/;"))
-            })
-            .map(|l| {
-                if !(l.ends_with("\n") || l.ends_with(";")) {
-                    String::from(l) + "\n"
-                } else {
-                    String::from(l)
-                }
-            })
-            .collect();
-        //let res = parse_queryset(&lines);
-
-        println!("lines: {:?}", &lines);
+    fn test_parse_column_definition_of_not_null() {
+        assert_eq!(
+            parse_column_definition_of_not_null(r##" not null"##),
+            Ok(("", "".to_string()))
+        );
     }
 
     #[test]
-    fn test_parse_column_definition1() {
-        let input = r##"int not null default 1 comment "主键"
-        "##;
-        println!("input is: {}", &input);
-        let res = parse_column_definition1(input);
-        println!("{:?}", res);
+    fn test_parse_str_with_escaped_and_combine_in_single_quote() {
+        let input = "\'hello\'";
+        println!("{}", &input);
+        assert_eq!(
+            parse_str_with_escaped_and_combine_in_single_quote(input),
+            Ok(("", "hello".to_string()))
+        )
+    }
+
+    #[test]
+    fn test_parse_default() {
+        assert_eq!(
+            parse_default(r##" default 1"##),
+            Ok(("", DefaultEnum::DefaultInt(1)))
+        );
+        assert_eq!(
+            parse_default(r##" default '1'"##),
+            Ok(("", DefaultEnum::DefaultStr("1".to_string())))
+        );
     }
 
     #[test]
     fn test_parse_column_definition_of_default() {
-        let input = r##"default "1""##;
         assert_eq!(
-            parse_column_definition_of_default(input),
-            Ok(("", "1".to_string()))
+            parse_column_definition_of_default(r##" not null default '1'"##),
+            Ok(("", DefaultEnum::DefaultStr("1".to_string())))
+        );
+        assert_eq!(
+            parse_column_definition_of_default(r##" not null default 2"##),
+            Ok(("", DefaultEnum::DefaultInt(2)))
+        );
+        assert_eq!(
+            parse_column_definition_of_default(
+                r##" NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"##
+            ),
+            Ok(("", DefaultEnum::DefaultCurStampOnUpdateCurStamp))
         );
     }
 
@@ -383,5 +571,46 @@ mod tests {
             parse_data_type("varchar(50) COLLATE utf8mb4_bin"),
             Ok(("", DataTypeEnum::VarChar(50)))
         );
+    }
+
+    #[test]
+    fn test_parse_column_definition1() {
+        assert_eq!(
+            parse_column_definition1(r##"id int not null default 1 comment "主键","##),
+            Ok((
+                "",
+                OneColumn::new("id".to_string(), DataTypeEnum::Int, "主键".to_string())
+            ))
+        )
+    }
+
+    #[test]
+    fn test_parse_many_column_definition() {
+        let input = r##"{`pwd` varchar(128) COLLATE utf8mb4_bin NOT NULL DEFAULT '1' COMMENT "加密后的密码",}"##;
+        let res = parse_many_column_definition(input);
+        println!("{:?}", res);
+        assert!(res.is_ok());
+        assert!(parse_many_column_definition(
+            r##"{`id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT "主键",
+            `id2` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT "主键",}"##
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn test_parse_many_column_definition2() {
+        let input = r##"{`id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `user_name` varchar(120) COLLATE utf8mb4_bin NOT NULL COMMENT '用户名，全局唯一',
+  `nick_name` varchar(200) COLLATE utf8mb4_bin NOT NULL COMMENT '用户昵称',
+  `status` smallint NOT NULL DEFAULT '1' COMMENT '用户状态',
+  `pwd` varchar(128) COLLATE utf8mb4_bin NOT NULL DEFAULT '' COMMENT '加密后的密码',
+  `token` varchar(50) COLLATE utf8mb4_bin NOT NULL DEFAULT '' COMMENT '加密的 token',
+  `avatar` varchar(200) COLLATE utf8mb4_bin NOT NULL DEFAULT '' COMMENT '头像地址',
+  `sex` varchar(10) COLLATE utf8mb4_bin NOT NULL DEFAULT '' COMMENT '性别',
+  `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `delete_time` datetime DEFAULT NULL COMMENT '删除时间',}"##;
+        let res = parse_many_column_definition(input);
+        println!("{:?}", res);
     }
 }
