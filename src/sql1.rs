@@ -1,5 +1,5 @@
 /*
->* 文章名称：从零编写一个解析器（3）—— 解析 MySQL 建表语句
+>* 文章名称：从零编写一个解析器 name: (), index_type: (), typ: (), typ: (), column_names: ()  typ: (), column_names: ()  column_names: ()  name: (), index_type: (), typ: (), column_names: () （3）—— 解析  name: (), index_type: (), typ: (), column_names: ()  name: (), index_type: (), typ: (), column_names: () MySQL 建表语句
 >* 参考地址：https://github.com/Geal/nom/blob/master/doc/making_a_new_parser_from_scratch.md
 >* 文章来自：https://github.com/suhanyujie/my-parser-rs
 >* 标签：Rust，parser
@@ -471,6 +471,96 @@ fn parse_many_column_definition(input: &str) -> IResult<&str, Vec<OneColumn>> {
     }
 }
 
+#[derive(Debug, PartialEq, Eq)]
+struct OneIndex {
+    name: String,
+    using_type: Option<String>, // b-tree、hash、None
+    typ: IndexIdxTyeEnum,       //unique key、primary key
+    column_names: Vec<String>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum OneLineEnum {
+    Column(OneColumn),
+    Index(OneIndex),
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum IndexIdxTyeEnum {
+    Primary,
+    Unique,
+    None,
+}
+
+// parse (`name`)
+fn parse_idx_column_name(input: &str) -> IResult<&str, Vec<String>> {
+    let column_plus = tuple((sql_identifier, space0, opt(tag(","))));
+    let mut parser = tuple((space0, tag("("), many1(column_plus), tag(")")));
+    match parser(input) {
+        Ok((remain, (_, _, column_name_arr, _))) => {
+            let mut name_arr: Vec<String> = vec![];
+            for (name, _, _) in column_name_arr {
+                name_arr.push(name);
+            }
+            Ok((remain, name_arr))
+        }
+        Err(err) => Err(err),
+    }
+}
+
+// parse using btree
+fn parse_idx_using_struct(input: &str) -> IResult<&str, String> {
+    let tree_type = alt((tag_no_case("btree"), tag_no_case("hash")));
+    let mut parser = tuple((space1, tag_no_case("using"), space1, tree_type));
+    match parser(input) {
+        Ok((remain, (_, _, _, tree_type))) => Ok((remain, tree_type.to_string())),
+        Err(err) => Err(err),
+    }
+}
+
+// 解析一行索引声明
+// PRIMARY KEY (`id`),
+fn parse_idx_line(input: &str) -> IResult<&str, OneIndex> {
+    let mut parse_index_key = tuple((
+        alt((tag_no_case("PRIMARY"), tag_no_case("UNIQUE"))),
+        space1,
+        tag_no_case("KEY"),
+        space1,
+        opt(sql_identifier),
+        parse_idx_column_name,
+        opt(parse_idx_using_struct),
+        opt(tag(",")),
+        opt(multispace0),
+    ));
+
+    match parse_index_key(input) {
+        Ok((remain, (typ, _, _, _, idx_name_op, column_name_arr, using_type, _, _))) => {
+            let mut idx_name = String::new();
+            if idx_name_op.is_some() {
+                idx_name = idx_name_op.unwrap();
+            }
+            let mut typ_enum = IndexIdxTyeEnum::None;
+            match typ.to_lowercase().as_str() {
+                "primary" => typ_enum = IndexIdxTyeEnum::Primary,
+                "unique" => typ_enum = IndexIdxTyeEnum::Unique,
+                _ => typ_enum = IndexIdxTyeEnum::None,
+            }
+            let idx = OneIndex {
+                name: idx_name,
+                using_type,
+                typ: typ_enum,
+                column_names: column_name_arr,
+            };
+            Ok((remain, idx))
+        }
+        Err(err) => Err(err),
+    }
+}
+
+// fn parse_define_line(input: &str) -> IResult<&str, OneLineEnum> {
+
+// }
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -598,6 +688,23 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_idx_line() {
+        let input = r##"UNIQUE KEY `user_name_idx` (`user_name`) USING BTREE"##;
+        assert_eq!(
+            parse_idx_line(input),
+            Ok((
+                "",
+                OneIndex {
+                    name: String::from("user_name_idx"),
+                    using_type: Some("BTREE".to_string()),
+                    typ: IndexIdxTyeEnum::Unique,
+                    column_names: vec!["user_name".to_string()],
+                }
+            ))
+        );
+    }
+
+    #[test]
     fn test_parse_many_column_definition2() {
         let input = r##"{`id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT '主键',
   `user_name` varchar(120) COLLATE utf8mb4_bin NOT NULL COMMENT '用户名，全局唯一',
@@ -609,8 +716,10 @@ mod tests {
   `sex` varchar(10) COLLATE utf8mb4_bin NOT NULL DEFAULT '' COMMENT '性别',
   `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '创建时间',
   `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
-  `delete_time` datetime DEFAULT NULL COMMENT '删除时间',}"##;
+  `delete_time` datetime DEFAULT NULL COMMENT '删除时间',
+}"##;
         let res = parse_many_column_definition(input);
         println!("{:?}", res);
+        assert!(res.is_ok());
     }
 }
