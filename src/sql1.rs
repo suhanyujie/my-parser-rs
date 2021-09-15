@@ -1,5 +1,5 @@
 /*
->* 文章名称：从零编写一个解析器 name: (), index_type: (), typ: (), typ: (), column_names: ()  typ: (), column_names: ()  column_names: ()  name: (), index_type: (), typ: (), column_names: () （3）—— 解析  name: (), index_type: (), typ: (), column_names: ()  name: (), index_type: (), typ: (), column_names: () MySQL 建表语句
+>* 文章名称：从零编写一个解析器 n name: (), typ: (), comment: ()  name: (), typ: (), comment: () ame: (), index_type: (), typ: (), typ: (), column_names: ()  typ: (), column_names: ()  column_names: ()  name: (), index_type: (), typ: (), column_names: () （3）—— 解析  name: (), index_type: (), typ: (), column_names: ()  name: (), index_type: (), typ: (), column_names: () MySQL 建表语句
 >* 参考地址：https://github.com/Geal/nom/blob/master/doc/making_a_new_parser_from_scratch.md
 >* 文章来自：https://github.com/suhanyujie/my-parser-rs
 >* 标签：Rust，parser
@@ -458,6 +458,30 @@ fn parse_column_definition1(input: &str) -> IResult<&str, OneColumn> {
     }
 }
 
+fn parse_column_definition2(input: &str) -> IResult<&str, OneLineEnum> {
+    let mut parser = tuple((
+        sql_identifier,
+        space1,
+        parse_data_type,
+        parse_column_definition_of_default,
+        opt(parse_comment),
+        space0,
+        tag(","),
+        opt(multispace0),
+    ));
+    match parser(input) {
+        Ok((remain, (column_name, _, column_type, _, opt_comment, _, _, _))) => {
+            let mut comment = String::new();
+            if opt_comment.is_some() {
+                comment = opt_comment.unwrap();
+            }
+            let one_column = OneColumn::new(column_name, column_type, comment);
+            Ok((remain, OneLineEnum::Column(one_column)))
+        }
+        Err(err) => Err(err),
+    }
+}
+
 fn parse_many_column_definition(input: &str) -> IResult<&str, Vec<OneColumn>> {
     let mut column_define_builder =
         fold_many1(parse_column_definition1, Vec::new, |mut arr, one_column| {
@@ -465,7 +489,7 @@ fn parse_many_column_definition(input: &str) -> IResult<&str, Vec<OneColumn>> {
             arr
         });
 
-    match tuple((tag("{"), space0, column_define_builder, space0, tag("}")))(input) {
+    match tuple((tag("("), space0, column_define_builder, space0, tag(")")))(input) {
         Ok((remain, (_, _, column_arr, _, _))) => Ok((remain, column_arr)),
         Err(err) => Err(err),
     }
@@ -557,9 +581,61 @@ fn parse_idx_line(input: &str) -> IResult<&str, OneIndex> {
     }
 }
 
-// fn parse_define_line(input: &str) -> IResult<&str, OneLineEnum> {
+fn parse_idx_line2(input: &str) -> IResult<&str, OneLineEnum> {
+    let mut parse_index_key = tuple((
+        alt((tag_no_case("PRIMARY"), tag_no_case("UNIQUE"))),
+        space1,
+        tag_no_case("KEY"),
+        space1,
+        opt(sql_identifier),
+        parse_idx_column_name,
+        opt(parse_idx_using_struct),
+        opt(tag(",")),
+        opt(multispace0),
+    ));
 
-// }
+    match parse_index_key(input) {
+        Ok((remain, (typ, _, _, _, idx_name_op, column_name_arr, using_type, _, _))) => {
+            let mut idx_name = String::new();
+            if idx_name_op.is_some() {
+                idx_name = idx_name_op.unwrap();
+            }
+            let mut typ_enum = IndexIdxTyeEnum::None;
+            match typ.to_lowercase().as_str() {
+                "primary" => typ_enum = IndexIdxTyeEnum::Primary,
+                "unique" => typ_enum = IndexIdxTyeEnum::Unique,
+                _ => typ_enum = IndexIdxTyeEnum::None,
+            }
+            let idx = OneIndex {
+                name: idx_name,
+                using_type,
+                typ: typ_enum,
+                column_names: column_name_arr,
+            };
+            Ok((remain, OneLineEnum::Index(idx)))
+        }
+        Err(err) => Err(err),
+    }
+}
+
+fn parse_one_define_line(input: &str) -> IResult<&str, OneLineEnum> {
+    let mut parser = alt((parse_idx_line2, parse_column_definition2));
+    parser(input)
+}
+
+fn parse_many1_define_line(input: &str) -> IResult<&str, Vec<OneLineEnum>> {
+    match tuple((
+        tag("("),
+        multispace0,
+        many1(parse_one_define_line),
+        multispace0,
+        tag(")"),
+    ))(input)
+    {
+        Ok((remain, (_, _, parse_res, _, _))) => Ok((remain, parse_res)),
+        Err(err) => Err(err),
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -706,7 +782,7 @@ mod tests {
 
     #[test]
     fn test_parse_many_column_definition2() {
-        let input = r##"{`id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT '主键',
+        let input = r##"(`id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT '主键',
   `user_name` varchar(120) COLLATE utf8mb4_bin NOT NULL COMMENT '用户名，全局唯一',
   `nick_name` varchar(200) COLLATE utf8mb4_bin NOT NULL COMMENT '用户昵称',
   `status` smallint NOT NULL DEFAULT '1' COMMENT '用户状态',
@@ -717,9 +793,22 @@ mod tests {
   `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '创建时间',
   `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   `delete_time` datetime DEFAULT NULL COMMENT '删除时间',
-}"##;
+    )"##;
         let res = parse_many_column_definition(input);
         println!("{:?}", res);
         assert!(res.is_ok());
+    }
+
+    #[test]
+    fn test_parse_many1_define_line() {
+        let input = r##"(
+`id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT '主键',
+        )"##;
+        let result: Vec<OneLineEnum> = vec![OneLineEnum::Column(OneColumn {
+            name: "id".to_string(),
+            typ: DataTypeEnum::Bigint,
+            comment: "主键".to_string(),
+        })];
+        assert_eq!(parse_many1_define_line(input), Ok(("", result)));
     }
 }
