@@ -1,5 +1,5 @@
 /*
->* 文章名称：从零编写一个解析器 n name: (), typ: (), comment: ()  name: (), typ: (), comment: () ame: (), index_type: (), typ: (), typ: (), column_names: ()  typ: (), column_names: ()  column_names: ()  name: (), index_type: (), typ: (), column_names: () （3）—— 解析  name: (), index_type: (), typ: (), column_names: ()  name: (), index_type: (), typ: (), column_names: () MySQL 建表语句
+>* 文章名称：从零编写一个解析器（3）—— 解析 MySQL 建表语句
 >* 参考地址：https://github.com/Geal/nom/blob/master/doc/making_a_new_parser_from_scratch.md
 >* 文章来自：https://github.com/suhanyujie/my-parser-rs
 >* 标签：Rust，parser
@@ -803,6 +803,7 @@ mod tests {
     fn test_parse_many1_define_line() {
         let input = r##"(
 `id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT '主键',
+PRIMARY KEY (`id`)
         )"##;
         let result: Vec<OneLineEnum> = vec![OneLineEnum::Column(OneColumn {
             name: "id".to_string(),

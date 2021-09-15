@@ -7,6 +7,7 @@ mod parse_num1;
 mod parse_string;
 mod redis;
 mod sql1;
+mod sql2_render;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Element {
