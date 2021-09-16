@@ -11,3 +11,4 @@
 * https://docs.rs/nom/6.0.0/nom/
 * https://github.com/fucking-translation/tutorial/tree/main/Rust/nom/nom-tutorial
 * 模板引擎 https://github.com/maciejhirsz/ramhorns
+* nom 的错误恢复 https://eyalkalderon.com/blog/nom-error-recovery/

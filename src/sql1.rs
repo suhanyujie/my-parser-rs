@@ -637,6 +637,30 @@ fn parse_many1_define_line(input: &str) -> IResult<&str, Vec<OneLineEnum>> {
     }
 }
 
+fn parse_create_table(input: &str) -> IResult<&str, String> {
+    let mut parse_if_not_exist = tuple((
+        space1,
+        tag_no_case("if"),
+        space1,
+        tag_no_case("not"),
+        space1,
+        tag_no_case("exists"),
+    ));
+    let mut parse_create = tuple((
+        tag_no_case("create"),
+        space1,
+        tag_no_case("table"),
+        opt(parse_if_not_exist),
+        space1,
+        sql_identifier,
+        multispace0,
+    ));
+    match parse_create(input) {
+        Ok((remain, (_, _, _, _, _, table_name, _))) => Ok((remain, table_name)),
+        Err(err) => Err(err),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
