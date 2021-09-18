@@ -661,6 +661,47 @@ fn parse_create_table(input: &str) -> IResult<&str, String> {
     }
 }
 
+fn parse_table_options(input: &str) -> IResult<&str, String> {
+    todo!()
+}
+fn parse_table_option(input: &str) -> IResult<&str, String> {
+    todo!()
+}
+
+// ENGINE [=] engine_name
+fn table_option_engine(input: &str) -> IResult<&str, String> {
+    let mut parser = tuple((
+        space0,
+        tag_no_case("engine"),
+        opt(tuple((space0, tag("=")))),
+        space0,
+        sql_identifier,
+    ));
+    match parser(input) {
+        Ok((remain, (_, _, _, _, engine_name))) => Ok((remain, engine_name)),
+        Err(err) => Err(err),
+    }
+}
+
+//  [DEFAULT] CHARACTER SET [=] charset_name
+fn table_option_char_set(input: &str) -> IResult<&str, String> {
+    let mut parser = tuple((
+        space1,
+        opt(tag_no_case("default")),
+        opt(space0),
+        alt((
+            tuple((space0, space0, tag_no_case("CHARSET"))),
+            tuple((tag_no_case("CHARACTER"), space1, tag_no_case("set"))),
+        )),
+        opt(tuple((space0, tag("="), space0))),
+        sql_identifier,
+    ));
+    match parser(input) {
+        Ok((remain, (_, _, _, _, _, char_set_name))) => Ok((remain, char_set_name)),
+        Err(err) => Err(err),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -835,5 +876,18 @@ PRIMARY KEY (`id`)
             comment: "主键".to_string(),
         })];
         assert_eq!(parse_many1_define_line(input), Ok(("", result)));
+    }
+
+    #[test]
+    fn test_table_option_engine() {
+        //  ENGINE [=] engine_name
+        assert_eq!(
+            table_option_engine(r##" ENGINE=innodb"##),
+            Ok(("", "innodb".to_string()))
+        );
+        assert_eq!(
+            table_option_engine(r##"ENGINE innodb"##),
+            Ok(("", "innodb".to_string()))
+        );
     }
 }
