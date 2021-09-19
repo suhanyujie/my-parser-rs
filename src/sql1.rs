@@ -686,18 +686,17 @@ fn table_option_engine(input: &str) -> IResult<&str, String> {
 //  [DEFAULT] CHARACTER SET [=] charset_name
 fn table_option_char_set(input: &str) -> IResult<&str, String> {
     let mut parser = tuple((
-        space1,
-        opt(tag_no_case("default")),
+        opt(tuple((space1, tag_no_case("default")))),
         opt(space0),
         alt((
             tuple((space0, space0, tag_no_case("CHARSET"))),
             tuple((tag_no_case("CHARACTER"), space1, tag_no_case("set"))),
         )),
-        opt(tuple((space0, tag("="), space0))),
+        tuple((space0, alt((tag("="), space0)), space0)),
         sql_identifier,
     ));
     match parser(input) {
-        Ok((remain, (_, _, _, _, _, char_set_name))) => Ok((remain, char_set_name)),
+        Ok((remain, (_, _, _, _, char_set_name))) => Ok((remain, char_set_name)),
         Err(err) => Err(err),
     }
 }
@@ -888,6 +887,22 @@ PRIMARY KEY (`id`)
         assert_eq!(
             table_option_engine(r##"ENGINE innodb"##),
             Ok(("", "innodb".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_table_option_char_set() {
+        assert_eq!(
+            table_option_char_set(r##" DEFAULT CHARSET=utf8mb4"##),
+            Ok(("", "utf8mb4".to_string()))
+        );
+        assert_eq!(
+            table_option_char_set(r##" CHARSET=utf8mb4"##),
+            Ok(("", "utf8mb4".to_string()))
+        );
+        assert_eq!(
+            table_option_char_set(r##" CHARSET utf8mb4"##),
+            Ok(("", "utf8mb4".to_string()))
         );
     }
 }
