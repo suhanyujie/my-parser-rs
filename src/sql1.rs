@@ -1,6 +1,6 @@
 /*
 >* 文章名称：从零编写一个解析器（3）—— 解析 MySQL 建表语句
->* 参考地址：https://github.com/Geal/nom/blob/master/doc/making_a_new_parser_from_scratch.md
+>* 参考地址：https://github.com/Geal/nom/blob/ma engine: (), charset: (), collate: (), comment: ()  engine: (), charset: (), collate: (), comment: () ster/doc/making_a_new_parser_from_scratch.md
 >* 文章来自：https://github.com/suhanyujie/my-parser-rs
 >* 标签：Rust，parser
 
@@ -661,11 +661,36 @@ fn parse_create_table(input: &str) -> IResult<&str, String> {
     }
 }
 
+#[derive(Debug, PartialEq, Eq)]
+struct TableOption {
+    engine: String,
+    charset: String,
+    collate: String,
+    comment: String,
+}
+
 fn parse_table_options(input: &str) -> IResult<&str, String> {
     todo!()
 }
-fn parse_table_option(input: &str) -> IResult<&str, String> {
-    todo!()
+fn parse_table_option(input: &str) -> IResult<&str, TableOption> {
+    let mut parser = tuple((
+        table_option_engine,
+        table_option_char_set,
+        table_option_collate,
+        table_option_comment,
+    ));
+    match parser(input) {
+        Ok((remain, (engine, charset, collate, comment))) => {
+            let table_option = TableOption {
+                engine,
+                charset,
+                collate,
+                comment,
+            };
+            Ok((remain, table_option))
+        }
+        Err(err) => Err(err),
+    }
 }
 
 // ENGINE [=] engine_name
@@ -697,6 +722,33 @@ fn table_option_char_set(input: &str) -> IResult<&str, String> {
     ));
     match parser(input) {
         Ok((remain, (_, _, _, _, char_set_name))) => Ok((remain, char_set_name)),
+        Err(err) => Err(err),
+    }
+}
+
+fn table_option_collate(input: &str) -> IResult<&str, String> {
+    let mut parser = tuple((
+        opt(tuple((space1, tag_no_case("default")))),
+        opt(space0),
+        tag_no_case("COLLATE"),
+        tuple((space0, alt((tag("="), space0)), space0)),
+        sql_identifier,
+    ));
+    match parser(input) {
+        Ok((remain, (_, _, _, _, collate_name))) => Ok((remain, collate_name)),
+        Err(err) => Err(err),
+    }
+}
+
+fn table_option_comment(input: &str) -> IResult<&str, String> {
+    let mut parser = tuple((
+        space1,
+        tag_no_case("comment"),
+        tuple((space0, alt((tag("="), space0)), space0)),
+        parse_str_with_escaped_and_combine_in_single_quote,
+    ));
+    match parser(input) {
+        Ok((remain, (_, _, _, comment))) => Ok((remain, comment)),
         Err(err) => Err(err),
     }
 }
@@ -903,6 +955,42 @@ PRIMARY KEY (`id`)
         assert_eq!(
             table_option_char_set(r##" CHARSET utf8mb4"##),
             Ok(("", "utf8mb4".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_table_option_collate() {
+        assert_eq!(
+            table_option_collate(r##" COLLATE=utf8mb4_bin"##),
+            Ok(("", "utf8mb4_bin".to_string()))
+        );
+        assert_eq!(
+            table_option_collate(r##" default COLLATE=utf8mb4_bin"##),
+            Ok(("", "utf8mb4_bin".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_table_option_comment() {
+        assert_eq!(
+            table_option_comment(r##" comment='配置表'"##),
+            Ok(("", "配置表".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_parse_table_option() {
+        let expect = TableOption {
+            engine: "InnoDB".to_string(),
+            charset: "utf8mb4".to_string(),
+            collate: "utf8mb4_bin".to_string(),
+            comment: "配置表".to_string(),
+        };
+        assert_eq!(
+            parse_table_option(
+                r##" ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin COMMENT='配置表'"##
+            ),
+            Ok(("", expect))
         );
     }
 }
