@@ -165,7 +165,7 @@ fn sql_identifier(input: &str) -> IResult<&str, String> {
 
 // 处理类型
 #[derive(Debug, PartialEq, Eq)]
-enum DataTypeEnum {
+pub(crate) enum DataTypeEnum {
     TinyInt,
     SmallInt,
     Int,
@@ -401,10 +401,10 @@ fn parse_default(input: &str) -> IResult<&str, DefaultEnum> {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-struct OneColumn {
-    name: String,
-    typ: DataTypeEnum,
-    comment: String,
+pub(super) struct OneColumn {
+    pub name: String,
+    pub typ: DataTypeEnum,
+    pub comment: String,
 }
 
 impl OneColumn {

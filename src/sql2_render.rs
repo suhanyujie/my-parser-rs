@@ -1,5 +1,5 @@
 /*
->* 文章名称：从零编写一个解析器（4）—— MySQL 表结构转结构体的渲染
+>* 文章名称：从零编 name: (), typ: (), comment: () 写一个解析器（4）—— MySQL 表结构转结构体的渲染
 >* 文章来自：https://github.com/suhanyujie/my-parser-rs
 >* 标签：Rust，parser
 
@@ -7,6 +7,8 @@
 
 
 */
+
+use crate::sql1::{DataTypeEnum, OneColumn};
 
 // 字段名
 // 类型
@@ -56,5 +58,15 @@ mod tests {
     fn test_identifier_case_camel() {
         let res = to_big_case_camel("user_name");
         println!("{}", res);
+    }
+
+    #[test]
+    fn render_demo1() {
+        let f1 = OneColumn {
+            name: "id".to_string(),
+            typ: DataTypeEnum::Bigint,
+            comment: "主键".to_string(),
+        };
+        let field_arr = vec![f1];
     }
 }
