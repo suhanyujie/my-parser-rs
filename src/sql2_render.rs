@@ -24,7 +24,7 @@ pub fn uppercase_first(input: &str) -> String {
     }
 }
 
-/// 标识符转为**大**驼峰
+/// 标识符转为**小**驼峰
 pub fn to_small_case_camel(input: &str) -> String {
     let str_arr: Vec<&str> = input.split('_').collect();
     let mut new_arr: Vec<String> = Vec::with_capacity(str_arr.len());
@@ -34,7 +34,7 @@ pub fn to_small_case_camel(input: &str) -> String {
     return new_arr.join("");
 }
 
-/// 标识符转为**小**驼峰
+/// 标识符转为**大**驼峰
 pub fn to_big_case_camel(input: &str) -> String {
     let str_arr: Vec<&str> = input.split('_').collect();
     let mut new_arr: Vec<String> = Vec::with_capacity(str_arr.len());
@@ -56,8 +56,9 @@ mod tests {
 
     #[test]
     fn test_identifier_case_camel() {
-        let res = to_big_case_camel("user_name");
-        println!("{}", res);
+        assert_eq!(to_big_case_camel("user_name"), "UserName".to_string());
+        assert_eq!(to_big_case_camel("Hello_world"), "HelloWorld".to_string());
+        assert_eq!(to_big_case_camel("aaaaa"), "Aaaaa".to_string());
     }
 
     #[test]
