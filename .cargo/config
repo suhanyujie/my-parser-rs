@@ -1,0 +1,3 @@
+[target.stable-x86_64-unknown-linux-gnu]
+runner = ".cargo/codelldb.sh"
+
