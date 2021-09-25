@@ -58,6 +58,7 @@ mod tests {
     fn test_identifier_case_camel() {
         assert_eq!(to_big_case_camel("user_name"), "UserName".to_string());
         assert_eq!(to_big_case_camel("Hello_world"), "HelloWorld".to_string());
+        assert_eq!(to_big_case_camel("Hello__world"), "HelloWorld".to_string());
         assert_eq!(to_big_case_camel("aaaaa"), "Aaaaa".to_string());
     }
 
