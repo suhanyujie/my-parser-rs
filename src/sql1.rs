@@ -105,6 +105,7 @@ use nom::{
     sequence::{preceded, tuple},
     IResult,
 };
+use serde::{Deserialize, Serialize};
 
 /// 解析 default 部分
 // not null default 1
@@ -164,8 +165,8 @@ fn sql_identifier(input: &str) -> IResult<&str, String> {
 }
 
 // 处理类型
-#[derive(Debug, PartialEq, Eq)]
-pub(crate) enum DataTypeEnum {
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DataTypeEnum {
     TinyInt,
     SmallInt,
     Int,
@@ -400,7 +401,7 @@ fn parse_default(input: &str) -> IResult<&str, DefaultEnum> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub(super) struct OneColumn {
     pub name: String,
     pub typ: DataTypeEnum,

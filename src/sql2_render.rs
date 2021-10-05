@@ -8,7 +8,17 @@
 
 */
 
+extern crate tera;
+
+use std::collections::HashMap;
+
 use crate::sql1::{DataTypeEnum, OneColumn};
+use serde_json::from_value;
+use serde_json::to_string;
+use serde_json::Error;
+use serde_json::Value;
+use tera::Context;
+use tera::Tera;
 
 // 字段名
 // 类型
@@ -44,6 +54,71 @@ pub fn to_big_case_camel(input: &str) -> String {
     return new_arr.join("");
 }
 
+pub fn to_big_case_camel_helper(args: &HashMap<String, Value>) -> tera::Result<Value> {
+    let str1 = match args.get("word") {
+        Some(val) => match from_value::<String>(val.clone()) {
+            Ok(v) => to_big_case_camel(&v),
+            Err(_) => "".to_string(),
+        },
+        None => "".to_string(),
+    };
+    Ok(serde_json::json!(str1))
+}
+
+pub fn transfer_type(typ: DataTypeEnum) -> String {
+    match typ {
+        DataTypeEnum::TinyInt => "tinyint".to_string(),
+        DataTypeEnum::SmallInt => "smallint".to_string(),
+        DataTypeEnum::Int => "int".to_string(),
+        DataTypeEnum::Bigint => "bigint".to_string(),
+        DataTypeEnum::VarChar(n) => {
+            format!("varchar({})", n)
+        }
+        DataTypeEnum::DateTime(u32) => "datetime".to_string(),
+        DataTypeEnum::Text => "text".to_string(),
+        DataTypeEnum::BigText => "bigtext".to_string(),
+        DataTypeEnum::Decimal(n) => {
+            format!("decimal({})", n)
+        }
+        _ => "Unknown".to_string(),
+    }
+}
+
+// 数据库类型对应到结构体中的类型映射 todo
+pub fn transfer_type_helper(args: &HashMap<String, Value>) -> tera::Result<Value> {
+    let typ = match args.get("typ") {
+        Some(val) => match from_value::<DataTypeEnum>(val.clone()) {
+            Ok(v) => match v {
+                DataTypeEnum::TinyInt => "int".to_string(),
+                DataTypeEnum::SmallInt => "int".to_string(),
+                DataTypeEnum::Int => "int".to_string(),
+                DataTypeEnum::Bigint => "int64".to_string(),
+                DataTypeEnum::VarChar(_) => "string".to_string(),
+                DataTypeEnum::DateTime(_) => "time.Time".to_string(),
+                DataTypeEnum::Text => "string".to_string(),
+                DataTypeEnum::BigText => "string".to_string(),
+                DataTypeEnum::Decimal(_) => "float64".to_string(),
+                _ => "Unknown".to_string(),
+            },
+            Err(_) => "Unknown".to_string(),
+        },
+        None => "Unknown".to_string(),
+    };
+    Ok(serde_json::json!(typ))
+}
+
+#[derive(Debug)]
+enum FieldNameStyleEnum {
+    SmallCaseCamel,
+    Underline,
+}
+
+#[derive(Debug)]
+struct TypeRender<'a> {
+    tera: &'a Tera,
+    field_name_style: FieldNameStyleEnum,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -64,11 +139,37 @@ mod tests {
 
     #[test]
     fn render_demo1() {
+        let mut tera = match Tera::new("./data/*.tpl") {
+            Ok(t) => t,
+            Err(e) => {
+                println!("Parsing error(s): {}", e);
+                ::std::process::exit(1);
+            }
+        };
+        tera.register_function("transfer_type_helper", transfer_type_helper);
+        tera.register_function("to_big_case_camel_helper", to_big_case_camel_helper);
+        let mut context = Context::new();
         let f1 = OneColumn {
             name: "id".to_string(),
             typ: DataTypeEnum::Bigint,
             comment: "主键".to_string(),
         };
         let field_arr = vec![f1];
+
+        context.insert("field_arr", &field_arr);
+        let struct_str = r###"type PpmOrgCustomerTrace struct {
+{{field_str}}
+}
+"###;
+        // Id int64 `gorm:"column:id;type:bigint(20);comment:主键" json:"id" form:"id"`
+        let type_tpl = r###"{% for field in field_arr %}
+{{to_big_case_camel_helper(word=field.name)}} {{transfer_type_helper(typ=field.typ)}} `gorm:"column:id;type:bigint(20);comment:{{field.comment}}" json:"{{field.name}}" form:"{{field.name}}"`
+{% endfor %}
+"###;
+        let field_str_result = tera.render_str(type_tpl, &context);
+        let field_str_result_str = field_str_result.unwrap_or("type_tpl render error".to_string());
+        context.insert("field_str", field_str_result_str.trim());
+        let struct_result = tera.render_str(struct_str, &context);
+        println!("{:?}", struct_result);
     }
 }
