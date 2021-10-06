@@ -1,4 +1,5 @@
 //! 提供一些简单的辅助库，如处理字符串的辅助函数、解析 markdown 文本示例、解析 MySQL 建表语句示例等等。
+#![warn(missing_docs)]
 
 mod http;
 mod json;

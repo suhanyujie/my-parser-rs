@@ -34,12 +34,21 @@ pub fn uppercase_first(input: &str) -> String {
     }
 }
 
+/// 将字符串转为小驼峰风格
+pub fn lowercase_first(input: &str) -> String {
+    let mut c = input.chars();
+    match c.next() {
+        None => String::new(),
+        Some(f) => f.to_lowercase().collect::<String>() + c.as_str(),
+    }
+}
+
 /// 标识符转为**小**驼峰
 pub fn to_small_case_camel(input: &str) -> String {
     let str_arr: Vec<&str> = input.split('_').collect();
     let mut new_arr: Vec<String> = Vec::with_capacity(str_arr.len());
     for item in str_arr {
-        new_arr.push(uppercase_first(item));
+        new_arr.push(lowercase_first(item));
     }
     return new_arr.join("");
 }
@@ -58,6 +67,18 @@ pub fn to_big_case_camel_helper(args: &HashMap<String, Value>) -> tera::Result<V
     let str1 = match args.get("word") {
         Some(val) => match from_value::<String>(val.clone()) {
             Ok(v) => to_big_case_camel(&v),
+            Err(_) => "".to_string(),
+        },
+        None => "".to_string(),
+    };
+    Ok(serde_json::json!(str1))
+}
+
+/// tera function 将字符串标识符转为小驼峰风格
+pub fn to_small_case_camel_helper(args: &HashMap<String, Value>) -> tera::Result<Value> {
+    let str1 = match args.get("word") {
+        Some(val) => match from_value::<String>(val.clone()) {
+            Ok(v) => to_small_case_camel(&v),
             Err(_) => "".to_string(),
         },
         None => "".to_string(),
@@ -160,6 +181,7 @@ mod tests {
         };
         tera.register_function("transfer_type_helper", transfer_type_helper);
         tera.register_function("to_big_case_camel_helper", to_big_case_camel_helper);
+        tera.register_function("to_small_case_camel_helper", to_small_case_camel_helper);
         let mut context = Context::new();
         let f1 = OneColumn {
             name: "id".to_string(),
@@ -175,13 +197,16 @@ mod tests {
 "###;
         // Id int64 `gorm:"column:id;type:bigint(20);comment:主键" json:"id" form:"id"`
         let type_tpl = r###"{% for field in field_arr %}
-{{to_big_case_camel_helper(word=field.name)}} {{transfer_type_helper(typ=field.typ)}} `gorm:"column:id;type:bigint(20);comment:{{field.comment}}" json:"{{field.name}}" form:"{{field.name}}"`
+    {{to_big_case_camel_helper(word=field.name)}} {{transfer_type_helper(typ=field.typ)}} `json:"{{to_small_case_camel_helper(word=field.name)}}"`
 {% endfor %}
 "###;
         let field_str_result = tera.render_str(type_tpl, &context);
         let field_str_result_str = field_str_result.unwrap_or("type_tpl render error".to_string());
         context.insert("field_str", field_str_result_str.trim());
         let struct_result = tera.render_str(struct_str, &context);
-        println!("{:?}", struct_result);
+        if let Ok(res_str) = &struct_result {
+            println!("{}", &res_str);
+        }
+        assert!(&struct_result.is_ok());
     }
 }
