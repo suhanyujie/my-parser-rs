@@ -1,5 +1,5 @@
 /*
->* 文章名称：从零编 name: (), typ: (), comment: () 写一个解析器（4）—— MySQL 表结构转结构体的渲染
+>* 文章名称：从零编写一个解析器（4）—— MySQL 表结构转结构体的渲染
 >* 文章来自：https://github.com/suhanyujie/my-parser-rs
 >* 标签：Rust，parser
 
@@ -107,16 +107,28 @@ pub fn transfer_type_helper(args: &HashMap<String, Value>) -> tera::Result<Value
     Ok(serde_json::json!(typ))
 }
 
-#[derive(Debug)]
-enum FieldNameStyleEnum {
-    SmallCaseCamel,
-    Underline,
-}
-
+// 定义一个渲染器
 #[derive(Debug)]
 struct TypeRender<'a> {
     tera: &'a Tera,
+    setting: RenderSetting,
+}
+
+/// 渲染设置
+#[derive(Debug)]
+struct RenderSetting {
     field_name_style: FieldNameStyleEnum,
+}
+
+// field name 风格
+#[derive(Debug)]
+enum FieldNameStyleEnum {
+    // 小驼峰
+    SmallCaseCamel,
+    // 大驼峰
+    BigCaseCamel,
+    // 下划线风格
+    Underline,
 }
 
 #[cfg(test)]

@@ -91,6 +91,8 @@ column_definition: {
 * 字符串字面量的声明可以参考 https://doc.rust-lang.org/reference/tokens.html#raw-string-literals
 
 */
+
+//! 使用 nom 解析 MySQL 的建表语句
 use crate::parse_string::{
     parse_str_with_escaped_and_combine, parse_str_with_escaped_and_combine_in_single_quote,
 };
@@ -112,7 +114,7 @@ use serde::{Deserialize, Serialize};
 // not null default '1231231'
 // [dataType] default null
 // [dataType] default AUTO_INCREMENT
-fn parse_column_definition_of_default(input: &str) -> IResult<&str, DefaultEnum> {
+pub fn parse_column_definition_of_default(input: &str) -> IResult<&str, DefaultEnum> {
     match tuple((opt(parse_column_definition_of_not_null), opt(parse_default)))(input) {
         Ok((remain, (_not_null, default_val))) => {
             // 有可能没有 not null 而只有 default ''
@@ -126,7 +128,7 @@ fn parse_column_definition_of_default(input: &str) -> IResult<&str, DefaultEnum>
     }
 }
 
-fn parse_column_definition_of_null(input: &str) -> IResult<&str, String> {
+pub fn parse_column_definition_of_null(input: &str) -> IResult<&str, String> {
     match tag_no_case("null")(input) {
         Ok((remain, null_val)) => Ok((remain, null_val.to_string())),
         Err(err) => Err(err),
@@ -134,21 +136,22 @@ fn parse_column_definition_of_null(input: &str) -> IResult<&str, String> {
 }
 
 // 解析 not null
-fn parse_column_definition_of_not_null(input: &str) -> IResult<&str, String> {
+pub fn parse_column_definition_of_not_null(input: &str) -> IResult<&str, String> {
     match tuple((space1, tag_no_case("not"), space1, tag_no_case("null")))(input) {
         Ok((remain, _some_val)) => Ok((remain, "".to_string())),
         Err(err) => Err(err),
     }
 }
 
-fn identifier_char_parser(input: &str) -> IResult<&str, String> {
+pub fn identifier_char_parser(input: &str) -> IResult<&str, String> {
     match alt((alphanumeric1, tag("_")))(input) {
         Ok((remain, parse_res)) => Ok((remain, parse_res.to_string())),
         Err(err) => Err(err),
     }
 }
 
-fn sql_identifier(input: &str) -> IResult<&str, String> {
+/// 解析 sql 中的标识符，包括字段名、表名等
+pub fn sql_identifier(input: &str) -> IResult<&str, String> {
     let identifier_parser = fold_many1(identifier_char_parser, String::new, |mut string, tmp| {
         string += &tmp;
         string
@@ -180,7 +183,7 @@ pub enum DataTypeEnum {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-enum DefaultEnum {
+pub enum DefaultEnum {
     DefaultNone, // 没有 default 语句
     DefaultNull,
     DefaultInt(u32),
@@ -192,35 +195,35 @@ enum DefaultEnum {
     Unknown,
 }
 
-fn type_int_size(input: &str) -> IResult<&str, u32> {
+pub fn type_int_size(input: &str) -> IResult<&str, u32> {
     match tuple((tag("("), nom_u32, tag(")")))(input) {
         Ok((remain, (_, int_size, _))) => Ok((remain, int_size)),
         Err(err) => Err(err),
     }
 }
 
-fn type_tiny_int(input: &str) -> IResult<&str, DataTypeEnum> {
+pub fn type_tiny_int(input: &str) -> IResult<&str, DataTypeEnum> {
     match tuple((tag_no_case("tinyint"), opt(type_int_size)))(input) {
         Ok((remain, (_, _))) => Ok((remain, DataTypeEnum::TinyInt)),
         Err(err) => Err(err),
     }
 }
 
-fn parse_int_auto_increment(input: &str) -> IResult<&str, DefaultEnum> {
+pub fn parse_int_auto_increment(input: &str) -> IResult<&str, DefaultEnum> {
     match tag_no_case("AUTO_INCREMENT")(input) {
         Ok((remain, _)) => Ok((remain, DefaultEnum::DefaultAutoIncrement)),
         Err(err) => Err(err),
     }
 }
 
-fn parse_int_is_unsigned(input: &str) -> IResult<&str, Option<i8>> {
+pub fn parse_int_is_unsigned(input: &str) -> IResult<&str, Option<i8>> {
     match tuple((space1, tag_no_case("unsigned")))(input) {
         Ok((remain, (_, _))) => Ok((remain, Some(1))),
         Err(err) => Err(err),
     }
 }
 
-fn type_some_int(input: &str) -> IResult<&str, DataTypeEnum> {
+pub fn type_some_int(input: &str) -> IResult<&str, DataTypeEnum> {
     match tuple((
         alt((
             tag_no_case("int"),
@@ -246,7 +249,7 @@ fn type_some_int(input: &str) -> IResult<&str, DataTypeEnum> {
     }
 }
 
-fn type_collate(input: &str) -> IResult<&str, String> {
+pub fn type_collate(input: &str) -> IResult<&str, String> {
     match tuple((space1, tag_no_case("collate"), space1, sql_identifier))(input) {
         Ok((remain, (_, _, _, collate_name))) => Ok((remain, collate_name)),
         Err(err) => Err(err),
@@ -254,7 +257,7 @@ fn type_collate(input: &str) -> IResult<&str, String> {
 }
 
 // `user_name` varchar(50) COLLATE utf8mb4_bin DEFAULT NULL COMMENT '用户名',
-fn type_varchar(input: &str) -> IResult<&str, DataTypeEnum> {
+pub fn type_varchar(input: &str) -> IResult<&str, DataTypeEnum> {
     match tuple((tag_no_case("varchar"), type_int_size, opt(type_collate)))(input) {
         // 暂时忽略字符集排序
         Ok((remain, (_, size, _))) => Ok((remain, DataTypeEnum::VarChar(size))),
@@ -263,7 +266,7 @@ fn type_varchar(input: &str) -> IResult<&str, DataTypeEnum> {
 }
 
 // datetime(3) DEFAULT NULL COMMENT '创建时间',
-fn type_datetime(input: &str) -> IResult<&str, DataTypeEnum> {
+pub fn type_datetime(input: &str) -> IResult<&str, DataTypeEnum> {
     match tuple((tag_no_case("datetime"), opt(type_int_size)))(input) {
         Ok((remain, (_, size_info))) => {
             if size_info.is_some() {
@@ -276,14 +279,14 @@ fn type_datetime(input: &str) -> IResult<&str, DataTypeEnum> {
     }
 }
 
-fn type_text(input: &str) -> IResult<&str, DataTypeEnum> {
+pub fn type_text(input: &str) -> IResult<&str, DataTypeEnum> {
     match tuple((tag_no_case("text"), opt(type_collate)))(input) {
         Ok((remain, (_, _))) => Ok((remain, DataTypeEnum::Text)),
         Err(err) => Err(err),
     }
 }
 
-fn type_bigtext(input: &str) -> IResult<&str, DataTypeEnum> {
+pub fn type_bigtext(input: &str) -> IResult<&str, DataTypeEnum> {
     match tuple((tag_no_case("bigtext"), opt(type_collate)))(input) {
         Ok((remain, (_, _))) => Ok((remain, DataTypeEnum::BigText)),
         Err(err) => Err(err),
@@ -292,28 +295,28 @@ fn type_bigtext(input: &str) -> IResult<&str, DataTypeEnum> {
 
 // decimal(30)
 // 最大可达 65
-fn type_decimal(input: &str) -> IResult<&str, DataTypeEnum> {
+pub fn type_decimal(input: &str) -> IResult<&str, DataTypeEnum> {
     match tuple((tag_no_case("decimal"), type_int_size))(input) {
         Ok((remain, (_, size))) => Ok((remain, DataTypeEnum::Decimal(size as u8))),
         Err(err) => Err(err),
     }
 }
 
-fn parse_data_type(input: &str) -> IResult<&str, DataTypeEnum> {
+pub fn parse_data_type(input: &str) -> IResult<&str, DataTypeEnum> {
     match alt((type_some_int, type_varchar, type_datetime, type_decimal))(input) {
         Ok((remain, parse_res)) => Ok((remain, parse_res)),
         Err(err) => Err(err),
     }
 }
 
-fn parse_default_int(input: &str) -> IResult<&str, DefaultEnum> {
+pub fn parse_default_int(input: &str) -> IResult<&str, DefaultEnum> {
     match tuple((tag_no_case("default"), space1, nom_u32))(input) {
         Ok((remain, (_, _, u32_val))) => Ok((remain, DefaultEnum::DefaultInt(u32_val))),
         Err(err) => Err(err),
     }
 }
 
-fn parse_default_str(input: &str) -> IResult<&str, DefaultEnum> {
+pub fn parse_default_str(input: &str) -> IResult<&str, DefaultEnum> {
     match tuple((
         tag_no_case("default"),
         space1,
@@ -325,7 +328,7 @@ fn parse_default_str(input: &str) -> IResult<&str, DefaultEnum> {
     }
 }
 
-fn parse_comment(input: &str) -> IResult<&str, String> {
+pub fn parse_comment(input: &str) -> IResult<&str, String> {
     match tuple((
         space1,
         tag_no_case("comment"),
@@ -338,14 +341,14 @@ fn parse_comment(input: &str) -> IResult<&str, String> {
     }
 }
 
-fn parse_default_null(input: &str) -> IResult<&str, DefaultEnum> {
+pub fn parse_default_null(input: &str) -> IResult<&str, DefaultEnum> {
     match tuple((tag_no_case("default"), space1, tag_no_case("null")))(input) {
         Ok((remain, (_, _, _))) => Ok((remain, DefaultEnum::DefaultNull)),
         Err(err) => Err(err),
     }
 }
 
-fn parse_default_on_current_timestamp(input: &str) -> IResult<&str, DefaultEnum> {
+pub fn parse_default_on_current_timestamp(input: &str) -> IResult<&str, DefaultEnum> {
     match tuple((
         space1,
         tag_no_case("on"),
@@ -360,7 +363,7 @@ fn parse_default_on_current_timestamp(input: &str) -> IResult<&str, DefaultEnum>
     }
 }
 
-fn parse_default_current_timestamp(input: &str) -> IResult<&str, DefaultEnum> {
+pub fn parse_default_current_timestamp(input: &str) -> IResult<&str, DefaultEnum> {
     match tuple((
         tag_no_case("default"),
         space1,
@@ -384,7 +387,7 @@ fn parse_default_current_timestamp(input: &str) -> IResult<&str, DefaultEnum> {
 //  default null
 // DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 // AUTO_INCREMENT 这个也可视为一种默认值
-fn parse_default(input: &str) -> IResult<&str, DefaultEnum> {
+pub fn parse_default(input: &str) -> IResult<&str, DefaultEnum> {
     match tuple((
         space1,
         alt((
@@ -401,8 +404,9 @@ fn parse_default(input: &str) -> IResult<&str, DefaultEnum> {
     }
 }
 
+/// MySQL 表中的一个字段
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub(super) struct OneColumn {
+pub struct OneColumn {
     pub name: String,
     pub typ: DataTypeEnum,
     pub comment: String,
@@ -414,14 +418,14 @@ impl OneColumn {
     }
 }
 
-fn parse_end_has_comma(input: &str) -> IResult<&str, Option<i8>> {
+pub fn parse_end_has_comma(input: &str) -> IResult<&str, Option<i8>> {
     let mut parse_has_comma = tuple((tag(","), opt(space0)));
     match parse_has_comma(input) {
         Ok((remain, (_, _))) => Ok((remain, Some(1))),
         Err(err) => Err(err),
     }
 }
-fn parse_end_no_comma(input: &str) -> IResult<&str, Option<i8>> {
+pub fn parse_end_no_comma(input: &str) -> IResult<&str, Option<i8>> {
     let mut parse_no_comma = tuple((opt(space0), tag("}")));
     match parse_no_comma(input) {
         Ok((remain, (_, _))) => Ok((remain, Some(0))),
@@ -430,13 +434,13 @@ fn parse_end_no_comma(input: &str) -> IResult<&str, Option<i8>> {
 }
 
 // 最后一行字段定义，可能没有逗号
-fn parse_end_comma(input: &str) -> IResult<&str, Option<i8>> {
+pub fn parse_end_comma(input: &str) -> IResult<&str, Option<i8>> {
     alt((parse_end_has_comma, parse_end_no_comma))(input)
 }
 
 /// 解析类型的定义，如：`int not null default '1' comment 'main key'`
 /// 在这其中，最重要的信息是 类型、默认值、注释
-fn parse_column_definition1(input: &str) -> IResult<&str, OneColumn> {
+pub fn parse_column_definition1(input: &str) -> IResult<&str, OneColumn> {
     let mut parser = tuple((
         sql_identifier,
         space1,
@@ -459,7 +463,7 @@ fn parse_column_definition1(input: &str) -> IResult<&str, OneColumn> {
     }
 }
 
-fn parse_column_definition2(input: &str) -> IResult<&str, OneLineEnum> {
+pub fn parse_column_definition2(input: &str) -> IResult<&str, OneLineEnum> {
     let mut parser = tuple((
         sql_identifier,
         space1,
@@ -483,7 +487,7 @@ fn parse_column_definition2(input: &str) -> IResult<&str, OneLineEnum> {
     }
 }
 
-fn parse_many_column_definition(input: &str) -> IResult<&str, Vec<OneColumn>> {
+pub fn parse_many_column_definition(input: &str) -> IResult<&str, Vec<OneColumn>> {
     let mut column_define_builder =
         fold_many1(parse_column_definition1, Vec::new, |mut arr, one_column| {
             arr.push(one_column);
@@ -496,29 +500,32 @@ fn parse_many_column_definition(input: &str) -> IResult<&str, Vec<OneColumn>> {
     }
 }
 
+/// MySQL 表中的索引
 #[derive(Debug, PartialEq, Eq)]
-struct OneIndex {
+pub struct OneIndex {
     name: String,
     using_type: Option<String>, // b-tree、hash、None
     typ: IndexIdxTyeEnum,       //unique key、primary key
     column_names: Vec<String>,
 }
 
+/// 一行建表语句的描述。包含字段描述、索引描述等。
 #[derive(Debug, PartialEq, Eq)]
-enum OneLineEnum {
+pub enum OneLineEnum {
     Column(OneColumn),
     Index(OneIndex),
 }
 
+/// 索引类型，如：主键、唯一索引等
 #[derive(Debug, PartialEq, Eq)]
-enum IndexIdxTyeEnum {
+pub enum IndexIdxTyeEnum {
     Primary,
     Unique,
     None,
 }
 
-// parse (`name`)
-fn parse_idx_column_name(input: &str) -> IResult<&str, Vec<String>> {
+/// 解析索引语句中的字段部分 —— (`name`)
+pub fn parse_idx_column_name(input: &str) -> IResult<&str, Vec<String>> {
     let column_plus = tuple((sql_identifier, space0, opt(tag(","))));
     let mut parser = tuple((space0, tag("("), many1(column_plus), tag(")")));
     match parser(input) {
@@ -533,8 +540,8 @@ fn parse_idx_column_name(input: &str) -> IResult<&str, Vec<String>> {
     }
 }
 
-// parse using btree
-fn parse_idx_using_struct(input: &str) -> IResult<&str, String> {
+/// 解析 using btree 段
+pub fn parse_idx_using_struct(input: &str) -> IResult<&str, String> {
     let tree_type = alt((tag_no_case("btree"), tag_no_case("hash")));
     let mut parser = tuple((space1, tag_no_case("using"), space1, tree_type));
     match parser(input) {
@@ -543,9 +550,7 @@ fn parse_idx_using_struct(input: &str) -> IResult<&str, String> {
     }
 }
 
-// 解析一行索引声明
-// PRIMARY KEY (`id`),
-fn parse_idx_line(input: &str) -> IResult<&str, OneIndex> {
+pub fn parse_idx_line1111(input: &str) -> IResult<&str, OneIndex> {
     let mut parse_index_key = tuple((
         alt((tag_no_case("PRIMARY"), tag_no_case("UNIQUE"))),
         space1,
@@ -582,7 +587,8 @@ fn parse_idx_line(input: &str) -> IResult<&str, OneIndex> {
     }
 }
 
-fn parse_idx_line2(input: &str) -> IResult<&str, OneLineEnum> {
+/// 解析一行索引声明。如：PRIMARY KEY (`id`)
+pub fn parse_idx_line2(input: &str) -> IResult<&str, OneLineEnum> {
     let mut parse_index_key = tuple((
         alt((tag_no_case("PRIMARY"), tag_no_case("UNIQUE"))),
         space1,
@@ -619,12 +625,14 @@ fn parse_idx_line2(input: &str) -> IResult<&str, OneLineEnum> {
     }
 }
 
-fn parse_one_define_line(input: &str) -> IResult<&str, OneLineEnum> {
+/// 解析建表语句体中的一段，无论是字段声明还是索引声明
+pub fn parse_one_define_line(input: &str) -> IResult<&str, OneLineEnum> {
     let mut parser = alt((parse_idx_line2, parse_column_definition2));
     parser(input)
 }
 
-fn parse_many1_define_line(input: &str) -> IResult<&str, Vec<OneLineEnum>> {
+/// 解析整个建表语句体中的内容
+pub fn parse_many1_define_line(input: &str) -> IResult<&str, Vec<OneLineEnum>> {
     match tuple((
         tag("("),
         multispace0,
@@ -638,7 +646,8 @@ fn parse_many1_define_line(input: &str) -> IResult<&str, Vec<OneLineEnum>> {
     }
 }
 
-fn parse_create_table(input: &str) -> IResult<&str, String> {
+/// 解析建表语句
+pub fn parse_create_table(input: &str) -> IResult<&str, String> {
     let mut parse_if_not_exist = tuple((
         space1,
         tag_no_case("if"),
@@ -662,18 +671,17 @@ fn parse_create_table(input: &str) -> IResult<&str, String> {
     }
 }
 
+/// 表配置
 #[derive(Debug, PartialEq, Eq)]
-struct TableOption {
-    engine: String,
-    charset: String,
-    collate: String,
-    comment: String,
+pub struct TableOption {
+    pub engine: String,
+    pub charset: String,
+    pub collate: String,
+    pub comment: String,
 }
 
-fn parse_table_options(input: &str) -> IResult<&str, String> {
-    todo!()
-}
-fn parse_table_option(input: &str) -> IResult<&str, TableOption> {
+/// 解析建表语句中的表配置部分
+pub fn parse_table_option(input: &str) -> IResult<&str, TableOption> {
     let mut parser = tuple((
         table_option_engine,
         table_option_char_set,
@@ -694,8 +702,8 @@ fn parse_table_option(input: &str) -> IResult<&str, TableOption> {
     }
 }
 
-// ENGINE [=] engine_name
-fn table_option_engine(input: &str) -> IResult<&str, String> {
+/// 表配置解析 —— ENGINE [=] engine_name
+pub fn table_option_engine(input: &str) -> IResult<&str, String> {
     let mut parser = tuple((
         space0,
         tag_no_case("engine"),
@@ -709,8 +717,8 @@ fn table_option_engine(input: &str) -> IResult<&str, String> {
     }
 }
 
-//  [DEFAULT] CHARACTER SET [=] charset_name
-fn table_option_char_set(input: &str) -> IResult<&str, String> {
+/// 表配置解析 —— [DEFAULT] CHARACTER SET [=] charset_name
+pub fn table_option_char_set(input: &str) -> IResult<&str, String> {
     let mut parser = tuple((
         opt(tuple((space1, tag_no_case("default")))),
         opt(space0),
@@ -727,7 +735,8 @@ fn table_option_char_set(input: &str) -> IResult<&str, String> {
     }
 }
 
-fn table_option_collate(input: &str) -> IResult<&str, String> {
+/// 表配置解析 —— 字符集排序
+pub fn table_option_collate(input: &str) -> IResult<&str, String> {
     let mut parser = tuple((
         opt(tuple((space1, tag_no_case("default")))),
         opt(space0),
@@ -741,7 +750,8 @@ fn table_option_collate(input: &str) -> IResult<&str, String> {
     }
 }
 
-fn table_option_comment(input: &str) -> IResult<&str, String> {
+/// 表配置解析 —— 表注释、说明
+pub fn table_option_comment(input: &str) -> IResult<&str, String> {
     let mut parser = tuple((
         space1,
         tag_no_case("comment"),
@@ -881,18 +891,18 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_idx_line() {
+    fn test_parse_idx_line2() {
         let input = r##"UNIQUE KEY `user_name_idx` (`user_name`) USING BTREE"##;
         assert_eq!(
-            parse_idx_line(input),
+            parse_idx_line2(input),
             Ok((
                 "",
-                OneIndex {
+                OneLineEnum::Index(OneIndex {
                     name: String::from("user_name_idx"),
                     using_type: Some("BTREE".to_string()),
                     typ: IndexIdxTyeEnum::Unique,
                     column_names: vec!["user_name".to_string()],
-                }
+                })
             ))
         );
     }

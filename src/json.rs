@@ -1,6 +1,6 @@
 //! json 解析器
-//! 参考 https://github.com/Geal/nom/blob/master/examples/json.rs
-//! 参考资料1：https://zhuanlan.zhihu.com/p/146455601
+//! 参考 <https://github.com/Geal/nom/blob/master/examples/json.rs>
+//! 参考资料1：<https://zhuanlan.zhihu.com/p/146455601>
 
 extern crate nom;
 

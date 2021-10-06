@@ -1,3 +1,5 @@
+//! 提供一些简单的辅助库，如处理字符串的辅助函数、解析 markdown 文本示例、解析 MySQL 建表语句示例等等。
+
 mod http;
 mod json;
 mod markdown;
@@ -6,8 +8,8 @@ mod nom1;
 mod parse_num1;
 mod parse_string;
 mod redis;
-mod sql1;
-mod sql2_render;
+pub mod sql1;
+pub mod sql2_render;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Element {

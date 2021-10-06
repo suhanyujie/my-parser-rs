@@ -1,5 +1,5 @@
 //! 基于 nom 的 markdown 解析器
-//! 参考 https://github.com/Geal/nom/blob/master/examples/json.rs
+//! 参考 <https://github.com/Geal/nom/blob/master/examples/json.rs>
 extern crate nom;
 
 use nom::{
