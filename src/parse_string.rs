@@ -274,7 +274,7 @@ fn test_parse_normal_or_escaped_str_and_combine() {
 }
 ```
 
-太酷了，完全正确。
+太酷了，完全正确。完整代码见 [Github](https://github.com/suhanyujie/my-parser-rs/blob/master/src/parse_string.rs)。
 
 至此，我们总算完成了小小的字符串解析，它既可以解析普通字符串，还能解析带有转义字符的字符串。别看它简单，它会给我们后续解析 SQL 做好铺垫。
 
