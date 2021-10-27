@@ -260,13 +260,11 @@ mod tests {
 }
 "###;
         // Id int64 `gorm:"column:id;type:bigint(20);comment:主键" json:"id" form:"id"`
-        let type_tpl = r###"{% for field in field_arr %}
-    {{to_big_case_camel_helper(word=field.name)}} {{transfer_type_helper(typ=field.typ)}} `json:"{{to_small_case_camel_helper(word=field.name)}}"`
-{% endfor %}
-"###;
+        // 4 个空格表示 field 的缩进
+        let type_tpl = r###"{% for field in field_arr %}    {{to_big_case_camel_helper(word=field.name)}} {{transfer_type_helper(typ=field.typ)}} `json:"{{to_small_case_camel_helper(word=field.name)}}"` {% endfor %}"###;
         let field_str_result = tera.render_str(type_tpl, &context);
         let field_str_result_str = field_str_result.unwrap_or("type_tpl render error".to_string());
-        context.insert("field_str", field_str_result_str.trim());
+        context.insert("field_str", &field_str_result_str);
         let struct_result = tera.render_str(struct_str, &context);
         if let Ok(res_str) = &struct_result {
             println!("{}", &res_str);
