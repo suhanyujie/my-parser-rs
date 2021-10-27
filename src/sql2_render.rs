@@ -241,6 +241,32 @@ mod tests {
     }
 
     #[test]
+    fn test_type_render() {
+        let mut tr = TypeRender::new();
+
+        let type_tpl = r###"{% for field in field_arr %}    {{to_big_case_camel_helper(word=field.name)}} {{transfer_type_helper(typ=field.typ)}} `json:"{{to_small_case_camel_helper(word=field.name)}}"` {% endfor %}"###;
+        let field_arr = get_test_field_arr();
+        let rendered_res = tr
+            .set_raw_tpl(type_tpl.to_string())
+            .set_var("field_arr", &field_arr)
+            .render();
+        if let Ok(res_str) = &rendered_res {
+            println!("{}", &res_str);
+        }
+        assert!(&rendered_res.is_ok());
+    }
+
+    fn get_test_field_arr() -> Vec<OneColumn> {
+        let f1 = OneColumn {
+            name: "id".to_string(),
+            typ: DataTypeEnum::Bigint,
+            comment: "主键".to_string(),
+        };
+        let field_arr = vec![f1];
+        return field_arr;
+    }
+
+    #[test]
     fn render_demo1() {
         let mut tera = match Tera::new("./data/*.tpl") {
             Ok(t) => t,
@@ -273,13 +299,11 @@ mod tests {
     }
 
     #[test]
-    fn test_type_render() {
+    fn test_demo2() {
+        // 从 create sql 到渲染
         let mut tr = TypeRender::new();
 
-        let type_tpl = r###"{% for field in field_arr %}
-    {{to_big_case_camel_helper(word=field.name)}} {{transfer_type_helper(typ=field.typ)}} `json:"{{to_small_case_camel_helper(word=field.name)}}"`
-{% endfor %}
-"###;
+        let type_tpl = r###"{% for field in field_arr %}    {{to_big_case_camel_helper(word=field.name)}} {{transfer_type_helper(typ=field.typ)}} `json:"{{to_small_case_camel_helper(word=field.name)}}"` {% endfor %}"###;
         let field_arr = get_test_field_arr();
         let rendered_res = tr
             .set_raw_tpl(type_tpl.to_string())
@@ -289,15 +313,5 @@ mod tests {
             println!("{}", &res_str);
         }
         assert!(&rendered_res.is_ok());
-    }
-
-    fn get_test_field_arr() -> Vec<OneColumn> {
-        let f1 = OneColumn {
-            name: "id".to_string(),
-            typ: DataTypeEnum::Bigint,
-            comment: "主键".to_string(),
-        };
-        let field_arr = vec![f1];
-        return field_arr;
     }
 }

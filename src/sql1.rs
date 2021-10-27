@@ -646,7 +646,8 @@ pub fn parse_many1_define_line(input: &str) -> IResult<&str, Vec<OneLineEnum>> {
     }
 }
 
-/// 解析建表语句
+/// 解析建表语句，返回表名
+/// 如：CREATE TABLE `demo_table_user`，则返回：`demo_table_user`
 pub fn parse_create_table(input: &str) -> IResult<&str, String> {
     let mut parse_if_not_exist = tuple((
         space1,
@@ -760,6 +761,33 @@ pub fn table_option_comment(input: &str) -> IResult<&str, String> {
     ));
     match parser(input) {
         Ok((remain, (_, _, _, comment))) => Ok((remain, comment)),
+        Err(err) => Err(err),
+    }
+}
+
+/// 一个表，表所包含的主要信息
+struct TableSchema {
+    table_name: String,
+    column_arr: Vec<OneColumn>,
+    option: TableOption,
+}
+
+/// 解析整个建表语句 totest
+fn parse_create_sql(input: &str) -> IResult<&str, TableSchema> {
+    let mut parser = tuple((
+        parse_create_table,
+        parse_many_column_definition,
+        parse_table_option,
+    ));
+    match parser(input) {
+        Ok((remain, (table_name, column_arr, table_option))) => Ok((
+            remain,
+            TableSchema {
+                table_name,
+                column_arr,
+                option: table_option,
+            },
+        )),
         Err(err) => Err(err),
     }
 }
@@ -1003,5 +1031,22 @@ PRIMARY KEY (`id`)
             ),
             Ok(("", expect))
         );
+    }
+
+    #[test]
+    fn test_parse_create_table() {
+        let input = r###"CREATE TABLE `demo_table_user` (
+  `id` bigint NOT NULL COMMENT '主键',
+  `creator` bigint NOT NULL DEFAULT '0' COMMENT '创建人',
+  `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `updator` bigint NOT NULL DEFAULT '0' COMMENT '更新人',
+  `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  `version` int NOT NULL DEFAULT '1' COMMENT '乐观锁',
+  `del_flag` tinyint NOT NULL DEFAULT '2' COMMENT '是否删除,1是,2否',
+  PRIMARY KEY (`id`) USING BTREE,
+  KEY `relate_idx` (`relate_id`) USING BTREE,
+  KEY `tpl_id_idx` (`tpl_id`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin COMMENT='模板分类关联表';"###;
+        let res = parse_create_table(input);
     }
 }
