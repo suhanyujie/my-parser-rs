@@ -442,6 +442,7 @@ pub fn parse_end_comma(input: &str) -> IResult<&str, Option<i8>> {
 /// 在这其中，最重要的信息是 类型、默认值、注释
 pub fn parse_column_definition1(input: &str) -> IResult<&str, OneColumn> {
     let mut parser = tuple((
+        multispace0,
         sql_identifier,
         space1,
         parse_data_type,
@@ -452,7 +453,7 @@ pub fn parse_column_definition1(input: &str) -> IResult<&str, OneColumn> {
         opt(multispace0),
     ));
     match parser(input) {
-        Ok((remain, (column_name, _, column_type, _, opt_comment, _, _, _))) => {
+        Ok((remain, (_, column_name, _, column_type, _, opt_comment, _, _, _))) => {
             let mut comment = String::new();
             if opt_comment.is_some() {
                 comment = opt_comment.unwrap();
@@ -521,6 +522,7 @@ pub enum OneLineEnum {
 pub enum IndexIdxTyeEnum {
     Primary,
     Unique,
+    Normal,
     None,
 }
 
@@ -550,7 +552,7 @@ pub fn parse_idx_using_struct(input: &str) -> IResult<&str, String> {
     }
 }
 
-pub fn parse_idx_line1111(input: &str) -> IResult<&str, OneIndex> {
+pub fn parse_idx_line(input: &str) -> IResult<&str, OneIndex> {
     let mut parse_index_key = tuple((
         alt((tag_no_case("PRIMARY"), tag_no_case("UNIQUE"))),
         space1,
@@ -587,11 +589,21 @@ pub fn parse_idx_line1111(input: &str) -> IResult<&str, OneIndex> {
     }
 }
 
+// 解析索引声明的前半部分，如：`primary key`、`key`、`unique key`
+fn parse_idx_part_prev(input: &str) -> IResult<&str, String> {
+    // 解析索引声明的前半部分，如：`primary key`、`key`、`unique key`
+    let mut pri_or_uni_idx = tuple((alt((tag_no_case("primary"), tag_no_case("UNIQUE"))), space1));
+    match pri_or_uni_idx(input) {
+        Ok((remain, (idx_typ, _))) => Ok((remain, idx_typ.to_string())),
+        Err(err) => Err(err),
+    }
+}
+
 /// 解析一行索引声明。如：PRIMARY KEY (`id`)
 pub fn parse_idx_line2(input: &str) -> IResult<&str, OneLineEnum> {
     let mut parse_index_key = tuple((
-        alt((tag_no_case("PRIMARY"), tag_no_case("UNIQUE"))),
-        space1,
+        multispace0,
+        opt(parse_idx_part_prev),
         tag_no_case("KEY"),
         space1,
         opt(sql_identifier),
@@ -602,7 +614,11 @@ pub fn parse_idx_line2(input: &str) -> IResult<&str, OneLineEnum> {
     ));
 
     match parse_index_key(input) {
-        Ok((remain, (typ, _, _, _, idx_name_op, column_name_arr, using_type, _, _))) => {
+        Ok((remain, (_, typ_op, _, _, idx_name_op, column_name_arr, using_type, _, _))) => {
+            let mut typ = "".to_string();
+            if typ_op.is_some() {
+                typ = typ_op.unwrap();
+            }
             let mut idx_name = String::new();
             if idx_name_op.is_some() {
                 idx_name = idx_name_op.unwrap();
@@ -611,6 +627,7 @@ pub fn parse_idx_line2(input: &str) -> IResult<&str, OneLineEnum> {
             match typ.to_lowercase().as_str() {
                 "primary" => typ_enum = IndexIdxTyeEnum::Primary,
                 "unique" => typ_enum = IndexIdxTyeEnum::Unique,
+                "" => typ_enum = IndexIdxTyeEnum::Normal,
                 _ => typ_enum = IndexIdxTyeEnum::None,
             }
             let idx = OneIndex {
@@ -621,27 +638,6 @@ pub fn parse_idx_line2(input: &str) -> IResult<&str, OneLineEnum> {
             };
             Ok((remain, OneLineEnum::Index(idx)))
         }
-        Err(err) => Err(err),
-    }
-}
-
-/// 解析建表语句体中的一段，无论是字段声明还是索引声明
-pub fn parse_one_define_line(input: &str) -> IResult<&str, OneLineEnum> {
-    let mut parser = alt((parse_idx_line2, parse_column_definition2));
-    parser(input)
-}
-
-/// 解析整个建表语句体中的内容
-pub fn parse_many1_define_line(input: &str) -> IResult<&str, Vec<OneLineEnum>> {
-    match tuple((
-        tag("("),
-        multispace0,
-        many1(parse_one_define_line),
-        multispace0,
-        tag(")"),
-    ))(input)
-    {
-        Ok((remain, (_, _, parse_res, _, _))) => Ok((remain, parse_res)),
         Err(err) => Err(err),
     }
 }
@@ -668,6 +664,41 @@ pub fn parse_create_table(input: &str) -> IResult<&str, String> {
     ));
     match parse_create(input) {
         Ok((remain, (_, _, _, _, _, table_name, _))) => Ok((remain, table_name)),
+        Err(err) => Err(err),
+    }
+}
+
+/// 解析建表语句体中的一段，无论是字段声明还是索引声明
+pub fn parse_one_define_line(input: &str) -> IResult<&str, OneLineEnum> {
+    let mut parser = alt((parse_idx_line2, parse_column_definition2));
+    parser(input)
+}
+
+/// 匹配多行声明
+// pub fn parse_many_column_definition1(input: &str) -> IResult<&str, Vec<OneColumn>> {
+//     let mut column_define_builder =
+//         fold_many1(parse_one_define_line, Vec::new, |mut arr, one_column| {
+//             arr.push(one_column);
+//             arr
+//         });
+
+//     match tuple((tag("("), space0, column_define_builder, space0, tag(")")))(input) {
+//         Ok((remain, (_, _, column_arr, _, _))) => Ok((remain, column_arr)),
+//         Err(err) => Err(err),
+//     }
+// }
+
+/// 解析整个建表语句体中的内容
+pub fn parse_many1_define_line(input: &str) -> IResult<&str, Vec<OneLineEnum>> {
+    match tuple((
+        tag("("),
+        multispace0,
+        many1(parse_one_define_line),
+        multispace0,
+        tag(")"),
+    ))(input)
+    {
+        Ok((remain, (_, _, parse_res, _, _))) => Ok((remain, parse_res)),
         Err(err) => Err(err),
     }
 }
@@ -736,7 +767,7 @@ pub fn table_option_char_set(input: &str) -> IResult<&str, String> {
     }
 }
 
-/// 表配置解析 —— 字符集排序
+/// 表配置解析 —— 字符集排序，如 `COLLATE=utf8mb4_bin`
 pub fn table_option_collate(input: &str) -> IResult<&str, String> {
     let mut parser = tuple((
         opt(tuple((space1, tag_no_case("default")))),
@@ -766,6 +797,7 @@ pub fn table_option_comment(input: &str) -> IResult<&str, String> {
 }
 
 /// 一个表，表所包含的主要信息
+#[derive(Debug, PartialEq, Eq)]
 struct TableSchema {
     table_name: String,
     column_arr: Vec<OneColumn>,
@@ -776,18 +808,39 @@ struct TableSchema {
 fn parse_create_sql(input: &str) -> IResult<&str, TableSchema> {
     let mut parser = tuple((
         parse_create_table,
-        parse_many_column_definition,
+        space0,
+        parse_many1_define_line,
+        space0,
         parse_table_option,
     ));
     match parser(input) {
-        Ok((remain, (table_name, column_arr, table_option))) => Ok((
-            remain,
-            TableSchema {
-                table_name,
-                column_arr,
-                option: table_option,
-            },
-        )),
+        Ok((remain, (table_name, _, column_arr, _, table_option))) => {
+            // 拿出字段部分，和索引部分，但索引的信息暂时用不上，所以就不取了
+            let column_arr: Vec<OneColumn> = column_arr
+                .into_iter()
+                .filter(|one_line| match one_line {
+                    OneLineEnum::Column(_) => true,
+                    _ => false,
+                })
+                .map(|one_line| match one_line {
+                    OneLineEnum::Column(column_line) => column_line,
+                    _ => OneColumn {
+                        name: "".to_string(),
+                        typ: DataTypeEnum::Unknown,
+                        comment: "".to_string(),
+                    },
+                })
+                .collect();
+
+            Ok((
+                remain,
+                TableSchema {
+                    table_name,
+                    column_arr,
+                    option: table_option,
+                },
+            ))
+        }
         Err(err) => Err(err),
     }
 }
@@ -1034,7 +1087,7 @@ PRIMARY KEY (`id`)
     }
 
     #[test]
-    fn test_parse_create_table() {
+    fn test_parse_create_sql() {
         let input = r###"CREATE TABLE `demo_table_user` (
   `id` bigint NOT NULL COMMENT '主键',
   `creator` bigint NOT NULL DEFAULT '0' COMMENT '创建人',
@@ -1047,6 +1100,55 @@ PRIMARY KEY (`id`)
   KEY `relate_idx` (`relate_id`) USING BTREE,
   KEY `tpl_id_idx` (`tpl_id`) USING BTREE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin COMMENT='模板分类关联表';"###;
-        let res = parse_create_table(input);
+        let res = parse_create_sql(input);
+        assert_eq!(
+            res.unwrap().1,
+            TableSchema {
+                table_name: "demo_table_user".to_string(),
+                column_arr: vec![
+                    OneColumn {
+                        name: "id".to_string(),
+                        typ: DataTypeEnum::Bigint,
+                        comment: "主键".to_string(),
+                    },
+                    OneColumn {
+                        name: "creator".to_string(),
+                        typ: DataTypeEnum::Bigint,
+                        comment: "创建人".to_string(),
+                    },
+                    OneColumn {
+                        name: "create_time".to_string(),
+                        typ: DataTypeEnum::DateTime(0,),
+                        comment: "创建时间".to_string(),
+                    },
+                    OneColumn {
+                        name: "updator".to_string(),
+                        typ: DataTypeEnum::Bigint,
+                        comment: "更新人".to_string(),
+                    },
+                    OneColumn {
+                        name: "update_time".to_string(),
+                        typ: DataTypeEnum::DateTime(0,),
+                        comment: "更新时间".to_string(),
+                    },
+                    OneColumn {
+                        name: "version".to_string(),
+                        typ: DataTypeEnum::Int,
+                        comment: "乐观锁".to_string(),
+                    },
+                    OneColumn {
+                        name: "del_flag".to_string(),
+                        typ: DataTypeEnum::TinyInt,
+                        comment: "是否删除,1是,2否".to_string(),
+                    },
+                ],
+                option: TableOption {
+                    engine: "InnoDB".to_string(),
+                    charset: "utf8mb4".to_string(),
+                    collate: "utf8mb4_bin".to_string(),
+                    comment: "模板分类关联表".to_string(),
+                },
+            }
+        );
     }
 }
