@@ -1,6 +1,6 @@
 /*
 >* 文章名称：从零编写一个解析器（3）—— 解析 MySQL 建表语句
->* 参考地址：https://github.com/Geal/nom/blob/ma engine: (), charset: (), collate: (), comment: ()  engine: (), charset: (), collate: (), comment: () ster/doc/making_a_new_parser_from_scratch.md
+>* 参考地址：https://github.com/Geal/nom/blob/master/doc/making_a_new_parser_from_scratch.md
 >* 文章来自：https://github.com/suhanyujie/my-parser-rs
 >* 标签：Rust，parser
 
